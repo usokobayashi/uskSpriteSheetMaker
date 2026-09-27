@@ -8,9 +8,22 @@
 > 個人開発です（現在のバージョン: v1.0.0）。仕様は変わることがあります。不具合・要望は Issues へどうぞ。
 
 ## ダウンロードと使いはじめ
-1. [Releases](../../releases) から `uskSpriteSheetMaker_exe_*.zip` をダウンロードして展開します（インストール不要）。
+1. [Releases](../../releases) から `uskSpriteSheetMaker.exe` をダウンロードします（展開・インストール不要。exe単体で動きます）。
 2. `uskSpriteSheetMaker.exe` を起動し、連番画像（またはフォルダ）をウィンドウへドロップします。
 3. 横セル数を決め、右上の PNG / TGA / GIF で書き出します。
+
+### 使い方（画像）
+| 1. 起動直後 | 2. 画像をドロップ |
+| --- | --- |
+| ![起動直後の画面](docs/images/guide/01_start.png) | ![画像をドロップした直後の画面](docs/images/guide/02_dropped.png) |
+
+| 3. 横セル数を調整 | 4. PNGで書き出し |
+| --- | --- |
+| ![横セル数を4に変更した画面](docs/images/guide/03_columns.png) | ![書き出し完了の画面](docs/images/guide/04_exported.png) |
+
+**できあがったシート**（わかりやすいよう3倍に拡大表示。実際の出力は256×128px・透過PNG）
+
+![出来上がったスプライトシート](docs/images/guide/05_result.png)
 
 ## 動作環境
 - Windows 10 / 11（64bit 推奨）
