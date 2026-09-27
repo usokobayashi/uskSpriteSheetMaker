@@ -19,9 +19,9 @@
 
 | 3. 横セル数を調整 | 4. PNGで書き出し |
 | --- | --- |
-| ![横セル数を4に変更した画面](docs/images/guide/03_columns.png) | ![書き出し完了の画面](docs/images/guide/04_exported.png) |
+| ![横セル数を6に変更した画面](docs/images/guide/03_columns.png) | ![書き出し完了の画面](docs/images/guide/04_exported.png) |
 
-**できあがったシート**
+**できあがったシート**（わかりやすいよう2倍に拡大表示。実際の出力は384×256px・透過PNG）
 
 ![出来上がったスプライトシート](docs/images/guide/05_result.png)
 
