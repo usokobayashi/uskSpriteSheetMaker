@@ -79,12 +79,17 @@
     <EmbeddedResource Include="Localization\en.lang"><LogicalName>SpriteSheetMaker.Localization.en.lang</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="Localization\zh-CN.lang"><LogicalName>SpriteSheetMaker.Localization.zh-CN.lang</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="Localization\id.lang"><LogicalName>SpriteSheetMaker.Localization.id.lang</LogicalName></EmbeddedResource>
+    <!-- LINE Seed JP（SIL Open Font License 1.1）をexeへ同梱し、利用者の環境にインストールされていなくても
+         同じ書体で表示できるようにする。ライセンス全文は docs/third_party_licenses を参照。 -->
+    <EmbeddedResource Include="assets\fonts\LINESeedJP_Regular.ttf"><LogicalName>SpriteSheetMaker.Fonts.LINESeedJP_Regular.ttf</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="assets\fonts\LINESeedJP_Bold.ttf"><LogicalName>SpriteSheetMaker.Fonts.LINESeedJP_Bold.ttf</LogicalName></EmbeddedResource>
   </ItemGroup>
 
   <ItemGroup>
     <None Include="app.manifest" />
     <None Include="app.ico" />
     <None Include="assets\app-icon.png" />
+    <None Include="docs\third_party_licenses\LINE_Seed_JP_OFL.txt" />
   </ItemGroup>
 
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

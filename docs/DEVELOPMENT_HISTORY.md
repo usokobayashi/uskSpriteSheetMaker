@@ -291,5 +291,5 @@ PNG / TGAは従来どおりフルアルファを保持します。
 - 開いたプロジェクトの画像は `%LOCALAPPDATA%\uskSpriteSheetMaker\projects\` へ展開して使い、閉じるときに削除する
 ## ライセンス
 - ソースコードは [MIT License](LICENSE)
-- フォント（LINE Seed JP・Meiryo UI・Microsoft YaHei UI）は同梱していない。PCに入っている場合だけ使い、無ければ標準フォントで表示する
+- LINE Seed JP は実行ファイルに同梱（SIL OFL 1.1、docs/third_party_licenses）。中国語表示のMicrosoft YaHei UIはライセンス上同梱できないためPCに入っている場合だけ使い、どちらも無ければMeiryo UIで表示する
 - アイコンは作者がAIで生成したモックアップを元に作成したもので、権利は作者にある（後で変更する場合がある）

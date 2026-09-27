@@ -95,12 +95,13 @@ English・中文・インドネシア語の訳は AI（GPT）が作ったもの�
 
 ## ビルド
 - Visual Studio 2022、または `dotnet build SpriteSheetMaker.csproj -c Release`（.NET Framework 4.8 の開発者パックが必要）。
-- テスト: `Tests/SpriteSheetMakerTests.csproj` をビルドして実行（単体テスト 86 件）。
+- テスト: `Tests/SpriteSheetMakerTests.csproj` をビルドして実行（単体テスト 88 件）。
 - 開発履歴・仕様の経緯は [docs/DEVELOPMENT_HISTORY.md](docs/DEVELOPMENT_HISTORY.md)、翻訳の書式は [Localization/README.md](Localization/README.md)。
 
 ## フォントとアイコン
-- 画面のフォントは、PC に入っていれば LINE Seed JP（中国語表示は Microsoft YaHei UI）、なければ Meiryo UI を使います。**フォントは同梱していません。**
+- 画面のフォントは LINE Seed JP を実行ファイルに同梱しており、PC に別途インストールされていなくても同じ書体で表示されます（読み込みに失敗した環境だけ Meiryo UI に戻ります）。中国語表示は、PC に入っていれば Microsoft YaHei UI（ライセンス上同梱不可）、なければ Meiryo UI を使います。
+- LINE Seed JP は SIL Open Font License 1.1 で提供されており、ライセンス全文は docs/third_party_licenses/LINE_Seed_JP_OFL.txt にあります。
 - アイコンは作者が AI で生成したモックアップを元に作成したもので、権利は作者にあります。
 
 ## ライセンス
-ソースコードは [MIT License](LICENSE)。
+ソースコードは [MIT License](LICENSE)。同梱している LINE Seed JP フォントは別ライセンス（SIL OFL 1.1、docs/third_party_licenses/LINE_Seed_JP_OFL.txt）です。

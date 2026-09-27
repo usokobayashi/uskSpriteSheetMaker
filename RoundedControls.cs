@@ -1,6 +1,9 @@
 using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Text;
+using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace SpriteSheetMaker
@@ -159,33 +162,97 @@ namespace SpriteSheetMaker
         }
     }
 
-    // UIフォントの生成を一か所に集約する。試験導入のLINE Seed JPが無い環境では
-    // Meiryo UIに戻る。元のフォントへ戻す場合はUseLineSeedをfalseにする。
-    // 中国語表示のときだけ、簡体字の字形が安定するMicrosoft YaHei UIを使う。
+    // UIフォントの生成を一か所に集約する。LINE Seed JP（SIL Open Font License 1.1、
+    // ライセンス全文は docs/third_party_licenses）はexeに同梱し、利用者の環境へ
+    // インストールされていなくても同じ書体で表示できるよう、実行時にメモリへ読み込む
+    // （PrivateFontCollectionはプロセス内だけで有効。OSのフォント一覧には出ない）。
+    // 読み込みに失敗した環境ではMeiryo UIへ戻る。元のフォントへ戻す場合はUseLineSeedをfalseにする。
+    // 中国語表示のときだけ、簡体字の字形が安定するMicrosoft YaHei UIを使う
+    // （こちらはライセンス上同梱できないため、従来どおりOSにインストールされている前提）。
     internal static class UiFont
     {
         private const bool UseLineSeed = true;
         private const string ChineseFamilyName = "Microsoft YaHei UI";
-        private static readonly string regularFamily;
+        private static readonly string regularFamily = "Meiryo UI";
         private static readonly string boldFamily;
         private static readonly string chineseFamily;
+        private static readonly FontFamily regularFontFamily;
+        private static readonly FontFamily boldFontFamily;
+        private static readonly FontFamily chineseFontFamily;
+        // AddMemoryFontに渡した非管理メモリは、フォントを使い続ける間（＝アプリの終了まで）
+        // 解放してはいけない（解放するとGDI+が不正なメモリを参照する）ため、保持し続ける。
+        private static readonly System.Collections.Generic.List<IntPtr> pinnedFontMemory =
+            new System.Collections.Generic.List<IntPtr>();
         private static bool useChinese;
 
         static UiFont()
         {
-            regularFamily = "Meiryo UI";
-            boldFamily = null;
             var installed = new System.Collections.Generic.HashSet<string>();
             foreach (FontFamily family in FontFamily.Families) installed.Add(family.Name);
-            chineseFamily = installed.Contains(ChineseFamilyName) ? ChineseFamilyName : null;
-            if (!UseLineSeed) return;
-            foreach (string prefix in new[] { "LINE Seed JP_TTF", "LINE Seed JP App_TTF", "LINE Seed JP_OTF" })
+            if (installed.Contains(ChineseFamilyName))
             {
-                if (!installed.Contains(prefix + " Regular")) continue;
-                regularFamily = prefix + " Regular";
-                if (installed.Contains(prefix + " Bold")) boldFamily = prefix + " Bold";
-                break;
+                chineseFamily = ChineseFamilyName;
+                chineseFontFamily = new FontFamily(ChineseFamilyName);
             }
+            if (!UseLineSeed) return;
+            try
+            {
+                var collection = new PrivateFontCollection();
+                byte[] regularBytes = ReadEmbeddedFont("LINESeedJP_Regular.ttf");
+                byte[] boldBytes = ReadEmbeddedFont("LINESeedJP_Bold.ttf");
+                if (regularBytes == null) return;
+                AddMemoryFont(collection, regularBytes);
+                if (boldBytes != null) AddMemoryFont(collection, boldBytes);
+                // Families の並びは追加した順とは限らない（環境によりアルファベット順などになる）ため、
+                // 名前の末尾（Regular／Bold）で対応付ける。
+                FontFamily foundRegular = null;
+                FontFamily foundBold = null;
+                foreach (FontFamily fam in collection.Families)
+                {
+                    if (fam.Name.EndsWith(" Regular", StringComparison.Ordinal)) foundRegular = fam;
+                    else if (fam.Name.EndsWith(" Bold", StringComparison.Ordinal)) foundBold = fam;
+                }
+                if (foundRegular == null) return;
+                regularFontFamily = foundRegular;
+                regularFamily = foundRegular.Name;
+                if (foundBold != null)
+                {
+                    boldFontFamily = foundBold;
+                    boldFamily = foundBold.Name;
+                }
+            }
+            catch
+            {
+                // 同梱フォントの読み込みに失敗しても起動は優先し、Meiryo UIのまま続行する。
+                regularFontFamily = null;
+                boldFontFamily = null;
+                regularFamily = "Meiryo UI";
+                boldFamily = null;
+            }
+        }
+
+        private static byte[] ReadEmbeddedFont(string fileName)
+        {
+            string resourceName = "SpriteSheetMaker.Fonts." + fileName;
+            using (Stream stream = System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream(resourceName))
+            {
+                if (stream == null) return null;
+                using (var memory = new MemoryStream())
+                {
+                    stream.CopyTo(memory);
+                    return memory.ToArray();
+                }
+            }
+        }
+
+        // PrivateFontCollection.AddMemoryFontは、渡したメモリの内容を直接参照し続けるため、
+        // 呼び出し側でアンマネージメモリへコピーしてから渡し、以後は（アプリ終了まで）解放しない。
+        private static void AddMemoryFont(PrivateFontCollection collection, byte[] data)
+        {
+            IntPtr buffer = Marshal.AllocCoTaskMem(data.Length);
+            Marshal.Copy(data, 0, buffer, data.Length);
+            collection.AddMemoryFont(buffer, data.Length);
+            pinnedFontMemory.Add(buffer);
         }
 
         public static void SetLanguage(UiLanguage language)
@@ -195,10 +262,13 @@ namespace SpriteSheetMaker
 
         public static Font Create(float size, FontStyle style, GraphicsUnit unit)
         {
-            if (useChinese) return new Font(chineseFamily, size, style, unit);
+            if (useChinese) return new Font(chineseFontFamily, size, style, unit);
             bool bold = (style & FontStyle.Bold) != 0;
-            if (bold && boldFamily != null)
-                return new Font(boldFamily, size, style & ~FontStyle.Bold, unit);
+            if (bold && boldFontFamily != null)
+                return new Font(boldFontFamily, size, style & ~FontStyle.Bold, unit);
+            if (regularFontFamily != null)
+                return new Font(regularFontFamily, size, style, unit);
+            // 同梱フォントの読み込みに失敗した場合のみ、OSにインストールされた名前で探す。
             return new Font(regularFamily, size, style, unit);
         }
 
