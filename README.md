@@ -21,7 +21,7 @@
 | --- | --- |
 | ![横セル数を4に変更した画面](docs/images/guide/03_columns.png) | ![書き出し完了の画面](docs/images/guide/04_exported.png) |
 
-**できあがったシート**（わかりやすいよう3倍に拡大表示。実際の出力は256×128px・透過PNG）
+**できあがったシート**
 
 ![出来上がったスプライトシート](docs/images/guide/05_result.png)
 
