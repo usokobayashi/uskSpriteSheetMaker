@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildToolsPath)\Microsoft.Common.props" Condition="Exists('$(MSBuildToolsPath)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">x86</Platform>
+    <ProjectGuid>{7D3D7FC2-51B6-4F4F-9D7B-7C9DE52255B5}</ProjectGuid>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>SpriteSheetMaker</RootNamespace>
+    <AssemblyName>uskSpriteSheetMaker</AssemblyName>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <Deterministic>true</Deterministic>
+    <Prefer32Bit>false</Prefer32Bit>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|x86' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\x86\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|x86' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\x86\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+    <Reference Include="System.Runtime.Serialization" />
+    <Reference Include="System.Xml" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="MainForm.cs" />
+    <Compile Include="ImagePipeline.cs" />
+    <Compile Include="UndoManager.cs" />
+    <Compile Include="TgaWriter.cs" />
+    <Compile Include="GifWriter.cs" />
+    <Compile Include="AppInfo.cs" />
+    <Compile Include="SheetStreamWriters.cs" />
+    <Compile Include="MainForm.Export.cs" />
+    <Compile Include="PreviewCanvas.cs" />
+    <Compile Include="PreviewSimulation.cs" />
+    <Compile Include="ColorAdjustmentDialog.cs" />
+    <Compile Include="RoundedControls.cs" />
+    <Compile Include="Localization.cs" />
+    <Compile Include="AppSettings.cs" />
+    <Compile Include="ProjectFile.cs" />
+    <Compile Include="MainForm.Localization.cs" />
+    <Compile Include="MainForm.Project.cs" />
+    <Compile Include="MainForm.Selection.cs" />
+    <Compile Include="MainForm.Memo.cs" />
+    <Compile Include="SheetMemo.cs" />
+    <Compile Include="AssignOverlay.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Localization\ja.lang"><LogicalName>SpriteSheetMaker.Localization.ja.lang</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="Localization\en.lang"><LogicalName>SpriteSheetMaker.Localization.en.lang</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="Localization\zh-CN.lang"><LogicalName>SpriteSheetMaker.Localization.zh-CN.lang</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="Localization\id.lang"><LogicalName>SpriteSheetMaker.Localization.id.lang</LogicalName></EmbeddedResource>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="app.manifest" />
+    <None Include="app.ico" />
+    <None Include="assets\app-icon.png" />
+  </ItemGroup>
+
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>
