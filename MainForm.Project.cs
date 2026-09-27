@@ -13,7 +13,7 @@ namespace SpriteSheetMaker
     {
         private const int RecentProjectLimit = 5;
         private const string RecentProjectKey = "recent";
-        private const string AppTitle = AppInfo.Name;
+        private const string AppTitle = AppInfo.Name + " v" + AppInfo.Version;
 
         private string projectPath;                     // 保存先。未保存の新規は null
         private string projectExtractDir;               // 開いたプロジェクトの画像の展開先

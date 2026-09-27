@@ -72,6 +72,7 @@
     <Compile Include="MainForm.Memo.cs" />
     <Compile Include="SheetMemo.cs" />
     <Compile Include="AssignOverlay.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
 
   <ItemGroup>

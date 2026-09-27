@@ -217,7 +217,7 @@ namespace SpriteSheetMaker
             Loc.Initialize();
             UiFont.SetLanguage(Loc.Current);
             Loc.LanguageChanged += OnUiLanguageChanged;
-            Text = AppInfo.Name;
+            Text = AppTitle;
             try { Icon = System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath); }
             catch { }
             Font = UiFont.Create(10.0f, FontStyle.Regular, GraphicsUnit.Point);
@@ -2571,7 +2571,7 @@ namespace SpriteSheetMaker
             };
 
             var title = new Label();
-            title.Text = AppInfo.Name;
+            title.Text = AppInfo.Name + "  v" + AppInfo.Version;
             title.AutoSize = true;
             title.Font = UiFont.Create(13.0f, FontStyle.Regular, GraphicsUnit.Point);
             title.ForeColor = lightText;
