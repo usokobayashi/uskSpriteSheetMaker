@@ -210,6 +210,22 @@ namespace SpriteSheetMaker
             foreach (Control child in root.Controls) Restyle(child);
         }
 
+        // ContextMenuStrip はフォームの Controls に入らないため上の Restyle では届かない。
+        // 項目（サブメニューを含む）を個別に辿ってフォントを差し替える。
+        public static void Restyle(ToolStrip strip)
+        {
+            ApplyTo(strip);
+            foreach (ToolStripItem item in strip.Items) RestyleItem(item);
+        }
+
+        private static void RestyleItem(ToolStripItem item)
+        {
+            ApplyTo(item);
+            var withDropDown = item as ToolStripDropDownItem;
+            if (withDropDown != null)
+                foreach (ToolStripItem child in withDropDown.DropDownItems) RestyleItem(child);
+        }
+
         private static void ApplyTo(Control control)
         {
             Font font = control.Font;
@@ -220,6 +236,18 @@ namespace SpriteSheetMaker
             Font replacement = Create(font.Size, style, font.Unit);
             if (replacement.Name == font.Name && replacement.Style == font.Style) { replacement.Dispose(); return; }
             control.Font = replacement;
+        }
+
+        private static void ApplyTo(ToolStripItem item)
+        {
+            Font font = item.Font;
+            bool isUiFamily = font.Name == regularFamily || font.Name == boldFamily || font.Name == chineseFamily;
+            if (!isUiFamily) return;
+            bool bold = font.Name == boldFamily || (font.Style & FontStyle.Bold) != 0;
+            FontStyle style = (font.Style & ~FontStyle.Bold) | (bold ? FontStyle.Bold : FontStyle.Regular);
+            Font replacement = Create(font.Size, style, font.Unit);
+            if (replacement.Name == font.Name && replacement.Style == font.Style) { replacement.Dispose(); return; }
+            item.Font = replacement;
         }
     }
 

@@ -139,6 +139,11 @@ namespace SpriteSheetMaker
             {
                 UiFont.SetLanguage(Loc.Current);
                 UiFont.Restyle(this);
+                // 右クリックメニューはフォームの子コントロールではないため、個別にフォントを差し替える。
+                UiFont.Restyle(treeContextMenu);
+                UiFont.Restyle(sheetContextMenu);
+                UiFont.Restyle(projectMenu);
+                UiFont.Restyle(previewModeMenu);
                 // メモの文字の大きさ・高さはフォントで決まるので測り直す。
                 MemoText.ResetFontMetrics();
                 foreach (SheetMemo memo in memos) memo.InvalidateLayout();
