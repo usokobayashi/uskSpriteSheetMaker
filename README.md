@@ -97,4 +97,3 @@ dotnet build Tests/SpriteSheetMakerTests.csproj -c Release
 
 - ソースコード：[MIT License](LICENSE)
 - 同梱フォント（LINE Seed JP）：[SIL Open Font License 1.1](docs/third_party_licenses/LINE_Seed_JP_OFL.txt)
-- アイコン：作者がAI生成のモックアップを元に作成。権利は作者にあります。
