@@ -8,19 +8,15 @@
 
 1. [Releases](../../releases) から `uskSpriteSheetMaker.exe` をダウンロードします。インストールは不要です。
 2. 起動したウィンドウに、画像またはフォルダをドラッグ＆ドロップします。
-3. 横セル数と縮小率を設定し、右上の PNG / TGA / GIF ボタンで書き出します。
+3. 右上の PNG / TGA / GIF ボタンで書き出します。
 
 | 1. 起動 | 2. 画像を追加 |
 | --- | --- |
 | ![起動直後の画面](docs/images/guide/01_start.png) | ![画像を追加した画面](docs/images/guide/02_dropped.png) |
 
-| 3. 横セル数を調整 | 4. 書き出し |
+| 3. 書き出し | 出力例 |
 | --- | --- |
-| ![横セル数を6に変更した画面](docs/images/guide/03_columns.png) | ![書き出し完了の画面](docs/images/guide/04_exported.png) |
-
-作成したスプライトシート：
-
-![スプライトシートの出力例](docs/images/guide/05_result.png)
+| ![書き出し完了の画面](docs/images/guide/04_exported.png) | ![スプライトシートの出力例](docs/images/guide/05_result.png) |
 
 ## 主な機能
 
