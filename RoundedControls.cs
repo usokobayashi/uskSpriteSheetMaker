@@ -130,11 +130,14 @@ namespace SpriteSheetMaker
 
         public int CornerRadius { get; set; } = 6;
         public Color BorderColor { get; set; } = Color.Empty;
+        // BackColor が透明のとき、マウスを乗せた間だけ塗る色（Empty なら塗らない）。
+        public Color TransparentHoverColor { get; set; } = Color.Empty;
 
         public RoundedButton()
         {
             SetStyle(ControlStyles.UserPaint | ControlStyles.ResizeRedraw |
-                ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint, true);
+                ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint |
+                ControlStyles.SupportsTransparentBackColor, true);
             FlatStyle = FlatStyle.Flat;
             FlatAppearance.BorderSize = 0;
         }
@@ -144,10 +147,68 @@ namespace SpriteSheetMaker
         protected override void OnMouseDown(MouseEventArgs e) { pressed = true; Invalidate(); base.OnMouseDown(e); }
         protected override void OnMouseUp(MouseEventArgs e) { pressed = false; Invalidate(); base.OnMouseUp(e); }
 
+        // 透明のときは OnPaint で親ごと描くので、標準の背景処理は行わない。
+        protected override void OnPaintBackground(PaintEventArgs pevent)
+        {
+            if (BackColor == Color.Transparent) return;
+            base.OnPaintBackground(pevent);
+        }
+
         protected override void OnPaint(PaintEventArgs e)
         {
+            if (BackColor == Color.Transparent)
+            {
+                // 後ろの親（タブの台と、その上の選択表示）を自分で描き写す。二重バッファの中身は
+                // 前の描画が残っているので、ここで必ず全面を塗る（塗らないと他の文字が透けて見える）。
+                PaintParentUnderneath(e.Graphics);
+                if (hover && Enabled && TransparentHoverColor != Color.Empty)
+                {
+                    e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                    Rectangle bounds = new Rectangle(0, 0, Width - 1, Height - 1);
+                    int r = Math.Max(1, Math.Min(CornerRadius, Math.Min(bounds.Width, bounds.Height) / 2));
+                    using (GraphicsPath path = MainForm.CreateRoundedPath(bounds, r))
+                    using (var brush = new SolidBrush(TransparentHoverColor))
+                        e.Graphics.FillPath(brush, path);
+                }
+                if (!string.IsNullOrEmpty(Text))
+                    TextRenderer.DrawText(e.Graphics, Text, Font, ClientRectangle, ForeColor,
+                        TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+                return;
+            }
             Color backdrop = RoundedPaint.ResolveBackdrop(Parent);
             Color baseColor = BackColor.A == 255 ? BackColor : backdrop;
+            PaintSolid(e, backdrop, baseColor);
+        }
+
+        // 親の背景と描画（Paint イベントで描くもの）を、このボタンの位置に合わせて描く。
+        private void PaintParentUnderneath(Graphics g)
+        {
+            Control parent = Parent;
+            if (parent == null)
+            {
+                g.Clear(SystemColors.Control);
+                return;
+            }
+            g.Clear(RoundedPaint.ResolveBackdrop(parent));
+            GraphicsState state = g.Save();
+            try
+            {
+                g.TranslateTransform(-Left, -Top);
+                var area = new Rectangle(Left, Top, Width, Height);
+                using (var args = new PaintEventArgs(g, area))
+                {
+                    InvokePaintBackground(parent, args);
+                    InvokePaint(parent, args);
+                }
+            }
+            finally
+            {
+                g.Restore(state);
+            }
+        }
+
+        private void PaintSolid(PaintEventArgs e, Color backdrop, Color baseColor)
+        {
             Color fill = !Enabled ? ControlPaint.Dark(baseColor, 0.2f)
                 : pressed ? ControlPaint.Dark(baseColor, 0.1f)
                 : hover ? ControlPaint.Light(baseColor, 0.15f) : baseColor;

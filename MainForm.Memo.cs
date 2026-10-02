@@ -74,6 +74,7 @@ namespace SpriteSheetMaker
             };
             memos.Add(memo);
             sheetCanvas.Invalidate();
+            sheetCanvas.AnimateMemoAppear(memo);
             BeginMemoEdit(memo);
         }
 
@@ -81,6 +82,7 @@ namespace SpriteSheetMaker
         {
             if (ReferenceEquals(memo, editingMemo)) EndMemoEdit(false);
             if (!memos.Remove(memo)) return;
+            sheetCanvas.AnimateMemoVanish(memo);
             sheetCanvas.Invalidate();
             CommitUndoableChange();
         }
@@ -177,7 +179,7 @@ namespace SpriteSheetMaker
             editor.TextChanged -= MemoEditor_TextChanged;
             sheetCanvas.Controls.Remove(editor);
             editor.Dispose();
-            if (memo != null && string.IsNullOrEmpty(memo.Text)) memos.Remove(memo);
+            if (memo != null && string.IsNullOrEmpty(memo.Text) && memos.Remove(memo)) sheetCanvas.AnimateMemoVanish(memo);
             sheetCanvas.Invalidate();
             if (!closing) sheetCanvas.Focus();
             CommitUndoableChange();
@@ -193,6 +195,7 @@ namespace SpriteSheetMaker
             EndMemoEdit(false);
             EndAssignMode();
             RestoreState(defaultSnapshot);
+            ResetViewsToFit();
             CommitUndoableChange();
             statusLabel.Text = Loc.T("message.projectReset");
         }

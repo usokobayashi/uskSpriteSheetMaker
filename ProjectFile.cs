@@ -34,6 +34,10 @@ namespace SpriteSheetMaker
         [DataMember(Name = "playerJump")] public decimal PlayerJump = 1;
         [DataMember(Name = "playerGravity")] public decimal PlayerGravity = 1;
         [DataMember(Name = "playerGroundOffset")] public decimal PlayerGroundOffset;
+        // コライダーの大きさ（画像ピクセル、0 は自動）と表示。古いファイルに無ければ 0・非表示のまま。
+        [DataMember(Name = "playerColliderWidth")] public decimal PlayerColliderWidth;
+        [DataMember(Name = "playerColliderHeight")] public decimal PlayerColliderHeight;
+        [DataMember(Name = "showCollider")] public bool ShowCollider;
         [DataMember(Name = "mirrorMissingDirections")] public bool MirrorMissingDirections;
 
         [DataMember(Name = "backgroundPalette")] public int BackgroundPalette;

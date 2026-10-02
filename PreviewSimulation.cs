@@ -214,6 +214,27 @@ namespace SpriteSheetMaker
         }
     }
 
+    // キャラクターの当たり判定の箱（コライダー）。大きさは画像ピクセルで指定し、画像の中心に置く。
+    // 0 の軸は従来どおりの自動（幅は画像の半分、高さは画像と同じ）。
+    internal static class ColliderSize
+    {
+        public const int MaxPixels = 4096;
+
+        public static SizeF ToScene(int widthPixels, int heightPixels, Size imageSize, Size displaySize)
+        {
+            float scaleX = imageSize.Width > 0 ? displaySize.Width / (float)imageSize.Width : 1f;
+            float scaleY = imageSize.Height > 0 ? displaySize.Height / (float)imageSize.Height : 1f;
+            float width = widthPixels > 0 ? Math.Min(MaxPixels, widthPixels) * scaleX : displaySize.Width * 0.5f;
+            float height = heightPixels > 0 ? Math.Min(MaxPixels, heightPixels) * scaleY : displaySize.Height;
+            return new SizeF(Math.Max(1f, width), Math.Max(1f, height));
+        }
+
+        public static SizeF Automatic(Size displaySize)
+        {
+            return new SizeF(Math.Max(1f, displaySize.Width * 0.5f), Math.Max(1f, displaySize.Height));
+        }
+    }
+
     // プレビューの固定の見本地形（床・スロープ・直角の崖・すり抜けられる足場）。
     // 座標はシーン(640x360)の論理ピクセルで、値が小さいほど上。描画と当たり判定で同じものを使う。
     public sealed class Terrain
@@ -251,10 +272,14 @@ namespace SpriteSheetMaker
             return GroundTop + (PeakTop - GroundTop) * t;
         }
 
-        // 立つ高さは、体の中心の真下の地面で決める（体の端に合わせると、坂の手前で浮いて見える）。
+        // 立つ高さは、コライダーの幅（中心±halfWidth）の真下で一番高い地面で決める。
+        // 地面は「平ら → 上り坂 → 崖で落ちる」の折れ線なので、両端と崖の上端だけ見れば最も高い所が分かる。
         private float SolidSupport(float centerX, float halfWidth)
         {
-            return SurfaceAt(centerX);
+            float left = centerX - halfWidth, right = centerX + halfWidth;
+            float support = Math.Min(SurfaceAt(left), SurfaceAt(right));
+            if (left < SlopeEndX && right >= SlopeEndX) support = Math.Min(support, PeakTop);   // 崖の縁に掛かっている
+            return support;
         }
 
         // 直角の崖の壁: 低い側（右）から左へ入ろうとして、足が崖の上端より下にあるときは通れない。
@@ -370,17 +395,26 @@ namespace SpriteSheetMaker
             Size spriteSize, Func<PlayerAnimationState, float> durationProvider,
             float movementSpeed, float jumpForce, float gravity)
         {
+            Update(seconds, input, sceneSize, spriteSize, ColliderSize.Automatic(spriteSize), durationProvider, movementSpeed, jumpForce, gravity);
+        }
+
+        // collider: 当たり判定の箱（シーン座標）。画像の中心に置き、その下端を足元として扱う。
+        public void Update(float seconds, PreviewInputController input, Size sceneSize,
+            Size spriteSize, SizeF collider, Func<PlayerAnimationState, float> durationProvider,
+            float movementSpeed, float jumpForce, float gravity)
+        {
             seconds = Math.Max(0, Math.Min(0.1f, seconds));
             movementSpeed = Math.Max(0, movementSpeed);
             jumpForce = Math.Max(1, jumpForce);
             gravity = Math.Max(1, gravity);
             if (terrain != null)
             {
-                UpdateOnTerrain(seconds, input, sceneSize, spriteSize, durationProvider, movementSpeed, jumpForce, gravity);
+                UpdateOnTerrain(seconds, input, sceneSize, spriteSize, collider, durationProvider, movementSpeed, jumpForce, gravity);
                 return;
             }
             int platformHeight = Math.Max(1, (int)Math.Round(sceneSize.Height * Terrain.GroundThicknessRatio));
-            float groundY = Math.Max(0, sceneSize.Height - spriteSize.Height - platformHeight);
+            // コライダーの下端が床に着く位置（画像はコライダーの中心に合わせて置く）
+            float groundY = Math.Max(0, sceneSize.Height - platformHeight - collider.Height * 0.5f - spriteSize.Height * 0.5f);
             PointF next = Position;
 
             if (input.Left != input.Right)
@@ -467,16 +501,18 @@ namespace SpriteSheetMaker
 
         // 固い地形の上で動く（横から見た物理）。足元(中心x, 足のy)を基準に、スロープは登り、
         // 直角の崖は横から通れず、崖の縁を越えると落ちる。足場は下から上がれて、上に乗れる。
-        private void UpdateOnTerrain(float seconds, PreviewInputController input, Size sceneSize, Size spriteSize,
+        private void UpdateOnTerrain(float seconds, PreviewInputController input, Size sceneSize, Size spriteSize, SizeF collider,
             Func<PlayerAnimationState, float> durationProvider, float movementSpeed, float jumpForce, float gravity)
         {
+            // 足元＝コライダーの下端。画像の中心とコライダーの中心は同じ位置。
+            float centerToFeet = collider.Height * 0.5f;
             if (!terrainPoseReady)
             {
                 terrainCenterX = Position.X + spriteSize.Width * 0.5f;
-                terrainFeetY = Position.Y + spriteSize.Height;
+                terrainFeetY = Position.Y + spriteSize.Height * 0.5f + centerToFeet;
                 terrainPoseReady = true;
             }
-            float halfWidth = spriteSize.Width * 0.25f;
+            float halfWidth = collider.Width * 0.5f;
             float cx = terrainCenterX, feet = terrainFeetY;
 
             float dx = 0;
@@ -539,9 +575,9 @@ namespace SpriteSheetMaker
                     else feet = newFeet;
                 }
                 else feet = newFeet;
-                if (feet - spriteSize.Height < 0)                        // 画面の上端で頭を打つ
+                if (feet - collider.Height < 0)                          // 画面の上端で頭を打つ
                 {
-                    feet = spriteSize.Height;
+                    feet = collider.Height;
                     if (verticalVelocity < 0) verticalVelocity = 0;
                 }
             }
@@ -554,7 +590,7 @@ namespace SpriteSheetMaker
 
             terrainCenterX = cx;
             terrainFeetY = feet;
-            Position = new PointF(cx - spriteSize.Width * 0.5f, feet - spriteSize.Height);
+            Position = new PointF(cx - spriteSize.Width * 0.5f, feet - centerToFeet - spriteSize.Height * 0.5f);
             ResolveState(seconds, input);
         }
     }

@@ -23,6 +23,44 @@ namespace SpriteSheetMaker
         // 画面座標。この範囲は暗く見えてもクリックを下のコントロールへ通す（タブ、スクロール）。
         public readonly List<Rectangle> PassThroughRects = new List<Rectangle>();
 
+        // 窓全体の濃さ（0=見えない、255=そのまま）。出入りのときに少しずつ変える。
+        private byte constantAlpha = 255;
+        private Bitmap lastBitmap;
+        private Rectangle lastBounds;
+        private Timer fadeTimer;
+
+        public void SetConstantAlpha(byte alpha)
+        {
+            constantAlpha = alpha;
+            if (lastBitmap != null) Present(lastBounds, lastBitmap);
+        }
+
+        // 濃さを target へ milliseconds かけて変え、終わったら done。
+        public void FadeTo(byte target, int milliseconds, Action done)
+        {
+            UiMotion.Stop(ref fadeTimer);
+            byte start = constantAlpha;
+            fadeTimer = UiMotion.Animate(milliseconds, t =>
+            {
+                if (IsDisposed) return;
+                SetConstantAlpha((byte)Math.Round(start + (target - start) * t));
+            }, () =>
+            {
+                fadeTimer = null;
+                if (done != null) done();
+            });
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                UiMotion.Stop(ref fadeTimer);
+                if (lastBitmap != null) { lastBitmap.Dispose(); lastBitmap = null; }
+            }
+            base.Dispose(disposing);
+        }
+
         public AssignOverlayForm()
         {
             FormBorderStyle = FormBorderStyle.None;
@@ -100,6 +138,14 @@ namespace SpriteSheetMaker
         // 画面上の bounds に、画像を貼って表示を更新する。
         public void ShowBitmap(Rectangle bounds, Bitmap bitmap)
         {
+            if (lastBitmap != null) lastBitmap.Dispose();
+            lastBitmap = new Bitmap(bitmap);   // 濃さだけ変えて描き直すために控える
+            lastBounds = bounds;
+            Present(bounds, bitmap);
+        }
+
+        private void Present(Rectangle bounds, Bitmap bitmap)
+        {
             Bounds = bounds;
             if (!IsHandleCreated) return;
             IntPtr screenDc = GetDC(IntPtr.Zero);
@@ -111,7 +157,7 @@ namespace SpriteSheetMaker
                 var size = new SIZE { cx = bitmap.Width, cy = bitmap.Height };
                 var source = new POINT { x = 0, y = 0 };
                 var target = new POINT { x = bounds.X, y = bounds.Y };
-                var blend = new BLENDFUNCTION { BlendOp = 0, BlendFlags = 0, SourceConstantAlpha = 255, AlphaFormat = 1 };
+                var blend = new BLENDFUNCTION { BlendOp = 0, BlendFlags = 0, SourceConstantAlpha = constantAlpha, AlphaFormat = 1 };
                 UpdateLayeredWindow(Handle, screenDc, ref target, ref size, memoryDc, ref source, 0, ref blend, 2);
             }
             finally

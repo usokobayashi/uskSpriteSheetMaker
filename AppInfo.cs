@@ -10,7 +10,7 @@ namespace SpriteSheetMaker
         private const string LegacyName = "SpriteMakerUntukAnjing";
         // 表示・配布物のバージョン番号（ここだけを変えれば、タイトルバー・exeのファイル情報・
         // プロジェクトファイルのappVersionすべてに反映される）。更新のたびに上げる。
-        public const string Version = "1.0.0";
+        public const string Version = "1.0.1";
 
         // %LOCALAPPDATA%\uskSpriteSheetMaker。以前の名前のフォルダが残っていれば、初回にそのまま引き継ぐ。
         public static string DataDirectory

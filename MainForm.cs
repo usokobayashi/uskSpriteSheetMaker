@@ -25,6 +25,7 @@ namespace SpriteSheetMaker
         private readonly Color accentColor = Color.FromArgb(84, 73, 255);
         private readonly Color lightText = Color.FromArgb(243, 245, 247);
         private readonly Color mutedText = Color.FromArgb(190, 198, 205);
+        private readonly Color disabledText = Color.FromArgb(104, 114, 122);   // 触れない項目の文字・枠
         // 「操作パネルは一段明るい色」用。チップ・エクスポートカードなど
         // darkPanelよりわずかに明るい背景に統一して使う。
         private readonly Color panelElevated = Color.FromArgb(31, 40, 47);
@@ -79,6 +80,7 @@ namespace SpriteSheetMaker
         private readonly Button addFileIconButton = new Button();
         private readonly Button addFolderIconButton = new Button();
         private readonly NumericUpDown columnsBox = new NumericUpDown();
+        private int appliedColumns = 8; // セル番号の付け替え用。直前の横セル数
         private readonly ComboBox scaleComboBox = new ComboBox();
         private readonly NumericUpDown fpsBox = new NumericUpDown();
         private readonly NumericUpDown startCellBox = new NumericUpDown();
@@ -97,6 +99,12 @@ namespace SpriteSheetMaker
         private readonly NumericUpDown playerJumpDistanceBox = new NumericUpDown();
         private readonly NumericUpDown playerGravityBox = new NumericUpDown();
         private readonly NumericUpDown playerGroundOffsetBox = new NumericUpDown();
+        private readonly NumericUpDown playerColliderWidthBox = new NumericUpDown();   // 画像ピクセル。0 は自動
+        private readonly NumericUpDown playerColliderHeightBox = new NumericUpDown();
+        private readonly RoundedCheckBox playerColliderVisibleCheckBox = new RoundedCheckBox();
+        private Control playerGroundOffsetGroup;
+        private Control playerColliderWidthHost, playerColliderHeightHost;
+        private Label playerColliderWidthLabel, playerColliderHeightLabel;
         private readonly RoundedCheckBox mirrorMissingDirectionsCheckBox = new RoundedCheckBox();
         private readonly ComboBox backgroundPaletteComboBox = new ComboBox();
         private readonly RoundedCheckBox blackTransparencyCheckBox = new RoundedCheckBox();
@@ -105,6 +113,7 @@ namespace SpriteSheetMaker
         private readonly RoundedButton exportPngButton = new RoundedButton();
         private readonly RoundedButton exportTgaButton = new RoundedButton();
         private readonly RoundedButton exportGifButton = new RoundedButton();
+        private readonly RoundedButton exportWebPButton = new RoundedButton();
         private readonly Button clearButton = new Button();
         private readonly Button removeButton = new Button();
         private readonly Button moveUpButton = new Button();
@@ -271,6 +280,7 @@ namespace SpriteSheetMaker
                 // 各パネルの初回自前レイアウトの実行順が環境によってズレることが
                 // あるため、ウィンドウが実際に表示された後にもう一度確定させる。
                 foreach (Action lateLayout in lateLayoutActions) lateLayout();
+                ResetViewsToFit();
             };
             Resize += (s, e) =>
             {
@@ -294,6 +304,7 @@ namespace SpriteSheetMaker
             InitializeMemoSupport();
             InitializeSelectionSupport();
             InitializeProjectSupport();
+            InitializeUpdateSupport();
         }
 
         private void InitializeSimulationSettings()
@@ -344,6 +355,11 @@ namespace SpriteSheetMaker
             treeView.HandleCreated += (s, e) => SendMessage(treeView.Handle, TVM_SETEXTENDEDSTYLE, new IntPtr(TVS_EX_DOUBLEBUFFER), new IntPtr(TVS_EX_DOUBLEBUFFER));
             treeView.AfterExpand += (s, e) => TryBeginInvoke(HideTreeHorizontalScrollBar);
             treeView.AfterCollapse += (s, e) => TryBeginInvoke(HideTreeHorizontalScrollBar);
+            // フォルダの開閉は、中身が伸び縮みする動きで見せる（矢印・ダブルクリック・キー操作のどれでも）。
+            treeView.BeforeExpand += (s, e) => CaptureTreeBeforeToggle(e.Node);
+            treeView.BeforeCollapse += (s, e) => CaptureTreeBeforeToggle(e.Node);
+            treeView.AfterExpand += (s, e) => StartTreeAccordion(e.Node, true);
+            treeView.AfterCollapse += (s, e) => StartTreeAccordion(e.Node, false);
             treeView.ItemDrag += TreeView_ItemDrag;
             treeView.DragEnter += TreeView_DragEnter;
             treeView.DragOver += TreeView_DragOver;
@@ -435,6 +451,41 @@ namespace SpriteSheetMaker
         // 表示される案内が分かりにくかったため、ドラッグ&ドロップ先そのものが
         // 見える破線の受け皿に置き換える。treeViewと同じ位置にDock=Fillで重ね、
         // 画像が無いときだけこちらを表示する（UpdateTree内で切り替え）。
+        private bool dropZoneHover;                  // ファイルをドラッグして受け皿の上にいる
+        private float dropArrowOffset;               // 弾む矢印の上下のずれ（px、上がマイナス）
+        private Timer dropBounceTimer;
+        private readonly System.Diagnostics.Stopwatch dropBounceClock = new System.Diagnostics.Stopwatch();
+        private const int DropBouncePeriodMs = 650;
+
+        // ドラッグで上に来たら、枠を明るくして矢印を上下に弾ませる（離れる・落とすと止める）。
+        private void SetDropZoneHover(bool hover, Control icon)
+        {
+            if (dropZoneHover == hover) return;
+            dropZoneHover = hover;
+            if (hover && UiMotion.Enabled)
+            {
+                dropBounceClock.Restart();
+                if (dropBounceTimer == null)
+                {
+                    dropBounceTimer = new Timer { Interval = 15 };
+                    dropBounceTimer.Tick += (s, e) =>
+                    {
+                        double phase = (dropBounceClock.ElapsedMilliseconds % DropBouncePeriodMs) / (double)DropBouncePeriodMs;
+                        dropArrowOffset = -5f * (float)Math.Abs(Math.Sin(Math.PI * phase));
+                        icon.Invalidate();
+                    };
+                }
+                dropBounceTimer.Start();
+            }
+            else
+            {
+                if (dropBounceTimer != null) dropBounceTimer.Stop();
+                dropArrowOffset = 0;
+                icon.Invalidate();
+            }
+            emptyDropZone.Invalidate();
+        }
+
         private void BuildEmptyDropZone()
         {
             emptyDropZone.Dock = DockStyle.Fill;
@@ -449,8 +500,9 @@ namespace SpriteSheetMaker
             emptyDropZone.Paint += (s, e) =>
             {
                 e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                Rectangle rect = new Rectangle(0, 0, emptyDropZone.Width - 1, emptyDropZone.Height - 1);
-                using (var pen = new Pen(Color.FromArgb(75, 86, 95), 1.5f) { DashStyle = System.Drawing.Drawing2D.DashStyle.Dash })
+                Rectangle rect = new Rectangle(1, 1, emptyDropZone.Width - 3, emptyDropZone.Height - 3);
+                Color dash = dropZoneHover ? Color.FromArgb(150, 140, 255) : Color.FromArgb(75, 86, 95);
+                using (var pen = new Pen(dash, dropZoneHover ? 2.2f : 1.5f) { DashStyle = System.Drawing.Drawing2D.DashStyle.Dash })
                 using (var path = CreateRoundedPath(rect, 10))
                     e.Graphics.DrawPath(pen, path);
             };
@@ -469,9 +521,10 @@ namespace SpriteSheetMaker
                 {
                     int cx = iconCircle.Width / 2;
                     int cy = iconCircle.Height / 2;
-                    e.Graphics.DrawLine(pen, cx, cy - 10, cx, cy + 7);
-                    e.Graphics.DrawLine(pen, cx - 7, cy - 3, cx, cy - 10);
-                    e.Graphics.DrawLine(pen, cx + 7, cy - 3, cx, cy - 10);
+                    float ay = cy + dropArrowOffset;   // 矢印だけが弾む（受け皿の線は動かない）
+                    e.Graphics.DrawLine(pen, cx, ay - 10, cx, ay + 7);
+                    e.Graphics.DrawLine(pen, cx - 7, ay - 3, cx, ay - 10);
+                    e.Graphics.DrawLine(pen, cx + 7, ay - 3, cx, ay - 10);
                     e.Graphics.DrawLine(pen, cx - 9, cy + 10, cx - 9, cy + 14);
                     e.Graphics.DrawLine(pen, cx - 9, cy + 14, cx + 9, cy + 14);
                     e.Graphics.DrawLine(pen, cx + 9, cy + 14, cx + 9, cy + 10);
@@ -506,16 +559,28 @@ namespace SpriteSheetMaker
             var addFolderDropButton = new Button { Text = Loc.T("button.addFolder"), Size = new Size(190, 36) };
             ApplyButtonStyle(addFolderDropButton);
             addFolderDropButton.Click += (s, e) => OpenFolderDropDialog();
+            // 最初の画面から、保存したプロジェクト（サンプルなど）もすぐ開けるようにする。
+            var openProjectDropButton = new Button { Text = Loc.T("button.openProject"), Size = new Size(190, 36) };
+            ApplyButtonStyle(openProjectDropButton);
+            openProjectDropButton.Click += (s, e) => OpenProjectWithDialog();
             BindText(title, "label.dropHere");
             BindText(subtitle, "hint.dropFormats");
             BindText(addFilesDropButton, "button.addFiles");
             BindText(addFolderDropButton, "button.addFolder");
+            BindText(openProjectDropButton, "button.openProject");
 
             emptyDropZone.Controls.Add(iconCircle);
+            emptyDropZone.DragEnter += (s, e) =>
+            {
+                if (e.Data != null && e.Data.GetDataPresent(DataFormats.FileDrop)) SetDropZoneHover(true, iconCircle);
+            };
+            emptyDropZone.DragLeave += (s, e) => SetDropZoneHover(false, iconCircle);
+            emptyDropZone.DragDrop += (s, e) => SetDropZoneHover(false, iconCircle);
             emptyDropZone.Controls.Add(title);
             emptyDropZone.Controls.Add(subtitle);
             emptyDropZone.Controls.Add(addFilesDropButton);
             emptyDropZone.Controls.Add(addFolderDropButton);
+            emptyDropZone.Controls.Add(openProjectDropButton);
 
             Action layoutEmptyDropZone = () =>
             {
@@ -529,7 +594,8 @@ namespace SpriteSheetMaker
                 subtitle.MaximumSize = new Size(maxTextWidth, 0);
                 addFilesDropButton.Width = Math.Min(190, maxTextWidth);
                 addFolderDropButton.Width = Math.Min(190, maxTextWidth);
-                int y = Math.Max(20, emptyDropZone.Height / 2 - 120);
+                openProjectDropButton.Width = Math.Min(190, maxTextWidth);
+                int y = Math.Max(20, emptyDropZone.Height / 2 - 150);
                 iconCircle.Location = new Point(centerX - iconCircle.Width / 2, y);
                 y += iconCircle.Height + 14;
                 title.Location = new Point(centerX - title.Width / 2, y);
@@ -539,6 +605,8 @@ namespace SpriteSheetMaker
                 addFilesDropButton.Location = new Point(centerX - addFilesDropButton.Width / 2, y);
                 y += addFilesDropButton.Height + 8;
                 addFolderDropButton.Location = new Point(centerX - addFolderDropButton.Width / 2, y);
+                y += addFolderDropButton.Height + 18;   // 画像の追加とは別の操作なので少し離す
+                openProjectDropButton.Location = new Point(centerX - openProjectDropButton.Width / 2, y);
             };
             emptyDropZone.Resize += (s, e) => layoutEmptyDropZone();
             emptyDropZone.HandleCreated += (s, e) => layoutEmptyDropZone();
@@ -561,6 +629,11 @@ namespace SpriteSheetMaker
             columnsBox.Margin = new Padding(5, 8, 15, 3);
             columnsBox.ValueChanged += (s, e) =>
             {
+                // フォルダごとに新しい行から始まるため、横セル数でセル番号が変わる。割り当てを同じ画像へ付け替える。
+                int previousColumns = appliedColumns;
+                appliedColumns = (int)columnsBox.Value;
+                if (!restoringState && previousColumns != appliedColumns)
+                    RemapCellAssignments(ComputeCellNumbers(folders, previousColumns), ComputeCellNumbers(folders));
                 QueuePreviewUpdate();
                 CommitUndoableChange();
             };
@@ -619,12 +692,20 @@ namespace SpriteSheetMaker
             exportGifButton.Click += (s, e) => Export(ImageOutputFormat.Gif);
             StyleGroupedExportButton(exportGifButton, exportGroupColor);
 
-            exportButtonGroup.Size = new Size(exportButtonWidth * 3 + exportButtonGap * 2, exportButtonHeight);
+            exportWebPButton.Text = "WebP";
+            exportWebPButton.Tag = "WebP";
+            exportWebPButton.Size = new Size(exportButtonWidth, exportButtonHeight);
+            exportWebPButton.Location = new Point((exportButtonWidth + exportButtonGap) * 3, 0);
+            exportWebPButton.Click += (s, e) => Export(ImageOutputFormat.WebP);
+            StyleGroupedExportButton(exportWebPButton, exportGroupColor);
+
+            exportButtonGroup.Size = new Size(exportButtonWidth * 4 + exportButtonGap * 3, exportButtonHeight);
             exportButtonGroup.Margin = new Padding(4, 2, 12, 2);
             exportButtonGroup.BackColor = Color.Transparent;
             exportButtonGroup.Controls.Add(exportPngButton);
             exportButtonGroup.Controls.Add(exportTgaButton);
             exportButtonGroup.Controls.Add(exportGifButton);
+            exportButtonGroup.Controls.Add(exportWebPButton);
 
             // エクスポート操作は他の設定項目と役割が異なる主要アクションのため、
             // ツールバーの右端に一段明るい背景の独立したカードとして視覚的に
@@ -847,6 +928,7 @@ namespace SpriteSheetMaker
             };
             tabSegmentBackground.BackColor = workspaceBack;
             tabSegmentBackground.CornerRadius = RadiusLg;
+            tabSegmentBackground.Paint += (s, e) => PaintTabIndicator(e.Graphics);
             ConfigureWorkspaceTabButton(previewWorkspaceTabButton, "tab.folder", PreviewWorkspacePage.Preview);
             ConfigureWorkspaceTabButton(transitionsWorkspaceTabButton, "tab.transitions", PreviewWorkspacePage.StateTransitions);
             ConfigureWorkspaceTabButton(parametersTabButton, "tab.settings", PreviewWorkspacePage.Parameters);
@@ -873,6 +955,7 @@ namespace SpriteSheetMaker
                 x += colWidth + gap;
                 int lastWidth = Math.Max(colWidth, totalWidth - pad - x);
                 parametersTabButton.SetBounds(x, pad, lastWidth, 32);
+                PlaceTabIndicator();
             };
             leftWorkspaceTabs.Resize += (s, e) => layoutTabSegment();
             lateLayoutActions.Add(layoutTabSegment);
@@ -973,6 +1056,7 @@ namespace SpriteSheetMaker
             bottomStatusStrip.Paint += (s, e) =>
             {
                 using (var pen = new Pen(dividerColor)) e.Graphics.DrawLine(pen, 0, 0, bottomStatusStrip.Width, 0);
+                PaintExportBar(e.Graphics);
             };
             statusLabel.ForeColor = mutedText;
             statusLabel.Font = UiFont.Create(9.5f, FontStyle.Regular, GraphicsUnit.Point);
@@ -1040,7 +1124,7 @@ namespace SpriteSheetMaker
             sheetFitButton.Margin = new Padding(8, 8, 16, 0);
             sheetFitButton.Font = UiFont.Create(8.5f, FontStyle.Regular, GraphicsUnit.Point);
             ApplyButtonStyle(sheetFitButton);
-            sheetFitButton.Click += (s, e) => sheetCanvas.ResetToFit();
+            sheetFitButton.Click += (s, e) => sheetCanvas.ResetToFitAnimated();
             sheetCellsChip.Margin = new Padding(8, 12, 0, 0);
             sheetSizeChip.Margin = new Padding(8, 12, 0, 0);
             sheetZoomChip.Margin = new Padding(8, 12, 0, 0);
@@ -1400,6 +1484,11 @@ namespace SpriteSheetMaker
             playerJumpDistanceBox.ValueChanged += (s, e) => SavePlayerParameters();
             playerGravityBox.ValueChanged += (s, e) => SavePlayerParameters();
             playerGroundOffsetBox.ValueChanged += (s, e) => { SavePlayerParameters(); UpdateAnimationPreview(); };
+            ConfigureRangeInput(playerColliderWidthBox, 0, ColliderSize.MaxPixels, 0);
+            ConfigureRangeInput(playerColliderHeightBox, 0, ColliderSize.MaxPixels, 0);
+            // 0 を入れたら、画像に合わせた初期値へ戻す（0 のままだと、1 にした途端に極端に小さくなるため）。
+            playerColliderWidthBox.ValueChanged += (s, e) => { EnsureColliderDefaults(); SavePlayerParameters(); UpdateAnimationPreview(); };
+            playerColliderHeightBox.ValueChanged += (s, e) => { EnsureColliderDefaults(); SavePlayerParameters(); UpdateAnimationPreview(); };
 
             characterSettingsRow = new FlowLayoutPanel
             {
@@ -1425,15 +1514,63 @@ namespace SpriteSheetMaker
             {
                 Dock = DockStyle.Fill,
                 WrapContents = true,
-                AutoScroll = false,
+                AutoScroll = true,   // コライダーの項目が増え、低い窓では下が切れるため縦にスクロールする
                 Padding = new Padding(2, 7, 0, 0),
                 BackColor = darkPanel,
                 Visible = false
             };
+            characterParameterRow.Layout += (s, e) => HideStateTransitionHorizontalScroll(characterParameterRow);   // 折り返すので横スクロールは不要
             characterParameterRow.Controls.Add(CreateSettingsGroup(MakeLocalizedLabel("field.speed"), CreateInputHost(playerMoveSpeedBox, 76)));
             characterParameterRow.Controls.Add(CreateSettingsGroup(MakeLocalizedLabel("field.jump"), CreateInputHost(playerJumpDistanceBox, 76)));
             characterParameterRow.Controls.Add(CreateSettingsGroup(MakeLocalizedLabel("field.gravity"), CreateInputHost(playerGravityBox, 76)));
-            characterParameterRow.Controls.Add(CreateSettingsGroup(MakeLocalizedLabel("field.groundOffset"), CreateInputHost(playerGroundOffsetBox, 76)));
+            playerGroundOffsetGroup = CreateSettingsGroup(MakeLocalizedLabel("field.groundOffset"), CreateInputHost(playerGroundOffsetBox, 76));
+            characterParameterRow.Controls.Add(playerGroundOffsetGroup);
+
+            // コライダー（当たり判定の箱）: 表示の切り替えと、大きさ（画像ピクセルの X=幅・Y=高さ）。
+            BindText(playerColliderVisibleCheckBox, "check.showCollider");
+            playerColliderVisibleCheckBox.AutoSize = true;
+            playerColliderVisibleCheckBox.ForeColor = lightText;
+            playerColliderVisibleCheckBox.BackColor = Color.Transparent;
+            playerColliderVisibleCheckBox.Margin = new Padding(10, 12, 10, 0);
+            playerColliderVisibleCheckBox.CheckedChanged += (s, e) =>
+            {
+                UpdateColliderInputsEnabled();
+                UpdateAnimationPreview();
+                CommitUndoableChange();
+            };
+            characterParameterRow.Controls.Add(playerColliderVisibleCheckBox);
+            var colliderSizeGroup = new FlowLayoutPanel
+            {
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                WrapContents = false,
+                Margin = Padding.Empty,
+                Padding = Padding.Empty,
+                BackColor = darkPanel
+            };
+            playerColliderWidthLabel = MakeLocalizedLabel("field.colliderSizeX");
+            playerColliderHeightLabel = MakeSettingsLabel("Y");
+            playerColliderWidthHost = CreateInputHost(playerColliderWidthBox, 76);
+            playerColliderHeightHost = CreateInputHost(playerColliderHeightBox, 76);
+            colliderSizeGroup.Controls.Add(CreateSettingsGroup(playerColliderWidthLabel, playerColliderWidthHost));
+            colliderSizeGroup.Controls.Add(CreateSettingsGroup(playerColliderHeightLabel, playerColliderHeightHost));
+            characterParameterRow.Controls.Add(colliderSizeGroup);
+            UpdateColliderInputsEnabled();
+            // 長い訳でも切れないよう、欄の幅で折り返して高さを確保する。
+            // 下の余白は Padding ではスクロール範囲に入らないため、最後の項目の下マージンで取る。
+            Label colliderHint = MakeLocalizedHint("hint.colliderAuto");
+            colliderHint.Margin = new Padding(colliderHint.Margin.Left, colliderHint.Margin.Top, 0, 24);
+            Action fitColliderHint = () =>
+            {
+                var maximum = new Size(Math.Max(120, characterParameterRow.ClientSize.Width - characterParameterRow.Padding.Horizontal -
+                    colliderHint.Margin.Horizontal - SystemInformation.VerticalScrollBarWidth), 0);
+                if (colliderHint.MaximumSize == maximum) return;
+                colliderHint.MaximumSize = maximum;
+                characterParameterRow.PerformLayout();
+            };
+            characterParameterRow.SizeChanged += (s, e) => fitColliderHint();
+            fitColliderHint();
+            characterParameterRow.Controls.Add(colliderHint);
             BindText(mirrorMissingDirectionsCheckBox, "check.mirrorReverse");
             mirrorMissingDirectionsCheckBox.AutoSize = true;
             mirrorMissingDirectionsCheckBox.ForeColor = lightText;
@@ -2208,16 +2345,30 @@ namespace SpriteSheetMaker
             animCanvas.SetBackgroundPalette(background, checkerA, checkerB);
         }
 
+        // 起動・プロジェクトの切り替え・リセットのあと、Fキーと同じ全体表示へ戻す。
+        private void ResetViewsToFit()
+        {
+            sheetCanvas.ResetToFitAnimated();
+            animCanvas.ResetToFitAnimated();
+        }
+
         private void SetPreviewTargetMode(PreviewTargetMode mode)
         {
             if (previewTargetMode == mode) return;
             EndAssignMode();
+            // 状態遷移・設定のページは種類ごとに中身が変わるので、選択欄の並び（デフォルト・エフェクト・キャラクター）の向きへ動かす。
+            Bitmap before = previewWorkspacePage != PreviewWorkspacePage.Preview ? CaptureLeftWorkspace() : null;
+            int previousModeOrder = PreviewModeOrder(previewTargetMode);
             previewTargetMode = mode;
             lastClickedCanvas = animCanvas;
             previewInput.Clear();
             animationTimer.Stop();
             if (mode == PreviewTargetMode.Standard) animationIndex = GetFirstPlayableFrameIndex();
             ApplyPreviewTargetModeUi();
+            if (before != null)
+                StartLeftWorkspaceTransition(before, PreviewModeOrder(mode) > previousModeOrder
+                    ? PageTransitionKind.SlideFromRight : PageTransitionKind.SlideFromLeft);
+            animCanvas.ResetToFitAnimated();
             ResetSimulation();
             UpdateSheetRangeColors();
             UpdateAnimationPreview();
@@ -2235,6 +2386,64 @@ namespace SpriteSheetMaker
         private void SetPreviewWorkspacePage(PreviewWorkspacePage page)
         {
             EndAssignMode();
+            PreviewWorkspacePage previousPage = previewWorkspacePage;
+            Bitmap before = previousPage != page ? CaptureLeftWorkspace() : null;
+            try
+            {
+                SwitchPreviewWorkspacePage(page);
+            }
+            catch
+            {
+                if (before != null) before.Dispose();
+                throw;
+            }
+            // タブの並び（フォルダ・状態遷移・設定）に合わせて、右のタブへは右から、左のタブへは左から入れる。
+            if (before != null)
+                StartLeftWorkspaceTransition(before, (int)page > (int)previousPage
+                    ? PageTransitionKind.SlideFromRight : PageTransitionKind.SlideFromLeft);
+            AnimateTabIndicator(page);
+        }
+
+        private const int PageSlideMilliseconds = 300;
+        private PageTransitionOverlay leftWorkspaceTransition;
+
+        // 左ペインの今の見た目を画像にする。演出できない状態（表示前・最小化中・Windowsのアニメーション効果がオフ）なら null。
+        private Bitmap CaptureLeftWorkspace()
+        {
+            if (leftWorkspaceTransition != null) leftWorkspaceTransition.Finish();   // 連続で切り替えたら前の演出は打ち切る
+            leftWorkspaceTransition = null;
+            if (leftWorkspaceHost == null || !leftWorkspaceHost.IsHandleCreated || !leftWorkspaceHost.Visible ||
+                leftWorkspaceHost.Width <= 0 || leftWorkspaceHost.Height <= 0 || WindowState == FormWindowState.Minimized ||
+                !SystemInformation.UIEffectsEnabled)
+                return null;
+            var image = new Bitmap(leftWorkspaceHost.Width, leftWorkspaceHost.Height, PixelFormat.Format32bppArgb);
+            leftWorkspaceHost.DrawToBitmap(image, new Rectangle(0, 0, image.Width, image.Height));
+            return image;
+        }
+
+        private void StartLeftWorkspaceTransition(Bitmap before, PageTransitionKind kind)
+        {
+            if (before.Size != leftWorkspaceHost.Size)
+            {
+                before.Dispose();
+                return;
+            }
+            leftWorkspaceHost.PerformLayout();
+            var after = new Bitmap(leftWorkspaceHost.Width, leftWorkspaceHost.Height, PixelFormat.Format32bppArgb);
+            leftWorkspaceHost.DrawToBitmap(after, new Rectangle(0, 0, after.Width, after.Height));
+            var overlay = new PageTransitionOverlay(before, after, kind, PageSlideMilliseconds)
+            {
+                Dock = DockStyle.Fill,
+                BackColor = darkPanel
+            };
+            leftWorkspaceTransition = overlay;
+            overlay.Disposed += (s, e) => { if (leftWorkspaceTransition == overlay) leftWorkspaceTransition = null; };
+            leftWorkspaceHost.Controls.Add(overlay);
+            overlay.BringToFront();
+        }
+
+        private void SwitchPreviewWorkspacePage(PreviewWorkspacePage page)
+        {
             previewWorkspacePage = page;
             parameterSettingsSelected = page == PreviewWorkspacePage.Parameters;
             // ページの表示切替を途中経過なしで一度に描画する（ちらつき防止）。
@@ -2320,16 +2529,88 @@ namespace SpriteSheetMaker
             ApplyPreviewSplitOnly();
         }
 
+        // タブのボタンは背景を透明にし、選択中の色付きの角丸は台（tabSegmentBackground）が描く。
+        // そうすることで、選択を変えたときに色付きの部分が隣のタブまで滑って動ける。
         private void StylePreviewTab(Button button, bool selected)
         {
-            // Buttonはtrue transparentを扱えないため、親のtabSegmentBackgroundと
-            // 同じ色（workspaceBack）を塗って背景に溶け込ませる。
-            button.BackColor = selected ? accentColor : workspaceBack;
+            button.BackColor = Color.Transparent;
             button.ForeColor = selected ? Color.White : mutedText;
-            button.FlatAppearance.MouseOverBackColor = selected
-                ? accentHoverColor
-                : panelElevated;
-            button.FlatAppearance.MouseDownBackColor = accentPressedColor;
+            var rounded = button as RoundedButton;
+            if (rounded != null) rounded.TransparentHoverColor = selected ? Color.Empty : panelElevated;
+            button.Invalidate();
+        }
+
+        private static int PreviewModeOrder(PreviewTargetMode mode)
+        {
+            return mode == PreviewTargetMode.Effect ? 1 : mode == PreviewTargetMode.Player ? 2 : 0;
+        }
+
+        //--------------
+        // タブの選択表示（滑って動く色付きの角丸）
+        //--------------
+        private const int TabIndicatorMilliseconds = 300;
+        private RectangleF tabIndicatorRect;          // 今描いている位置（台の座標）
+        private RectangleF tabIndicatorFrom;
+        private readonly System.Diagnostics.Stopwatch tabIndicatorClock = new System.Diagnostics.Stopwatch();
+        private Timer tabIndicatorTimer;
+
+        private Button TabButtonFor(PreviewWorkspacePage page)
+        {
+            return page == PreviewWorkspacePage.StateTransitions ? (Button)transitionsWorkspaceTabButton
+                : page == PreviewWorkspacePage.Parameters ? parametersTabButton : previewWorkspaceTabButton;
+        }
+
+        // 位置合わせ（大きさが変わったとき）は動かさずにその場へ置く。
+        private void PlaceTabIndicator()
+        {
+            if (tabIndicatorTimer != null && tabIndicatorTimer.Enabled) return;
+            tabIndicatorRect = TabButtonFor(previewWorkspacePage).Bounds;
+            tabSegmentBackground.Invalidate(true);
+        }
+
+        private void AnimateTabIndicator(PreviewWorkspacePage page)
+        {
+            RectangleF target = TabButtonFor(page).Bounds;
+            if (!SystemInformation.UIEffectsEnabled || tabIndicatorRect.IsEmpty || !tabSegmentBackground.IsHandleCreated)
+            {
+                tabIndicatorRect = target;
+                tabSegmentBackground.Invalidate(true);
+                return;
+            }
+            tabIndicatorFrom = tabIndicatorRect;
+            tabIndicatorClock.Restart();
+            if (tabIndicatorTimer == null)
+            {
+                tabIndicatorTimer = new Timer { Interval = 15 };
+                tabIndicatorTimer.Tick += (s, e) =>
+                {
+                    RectangleF goal = TabButtonFor(previewWorkspacePage).Bounds;
+                    float t = PageTransitionOverlay.Ease(tabIndicatorClock.ElapsedMilliseconds / (float)TabIndicatorMilliseconds);
+                    tabIndicatorRect = new RectangleF(
+                        tabIndicatorFrom.X + (goal.X - tabIndicatorFrom.X) * t,
+                        goal.Y,
+                        tabIndicatorFrom.Width + (goal.Width - tabIndicatorFrom.Width) * t,
+                        goal.Height);
+                    if (tabIndicatorClock.ElapsedMilliseconds >= TabIndicatorMilliseconds)
+                    {
+                        tabIndicatorRect = goal;
+                        tabIndicatorTimer.Stop();
+                    }
+                    tabSegmentBackground.Invalidate(true);
+                };
+            }
+            tabIndicatorTimer.Start();
+        }
+
+        private void PaintTabIndicator(Graphics g)
+        {
+            if (tabIndicatorRect.Width <= 1) return;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            Rectangle bounds = Rectangle.Round(new RectangleF(tabIndicatorRect.X, tabIndicatorRect.Y,
+                tabIndicatorRect.Width - 1, tabIndicatorRect.Height - 1));
+            using (var path = CreateRoundedPath(bounds, RadiusSm))
+            using (var brush = new SolidBrush(accentColor))
+                g.FillPath(brush, path);
         }
 
         private static string GetStateDisplayName(PlayerAnimationState state)
@@ -2630,6 +2911,7 @@ namespace SpriteSheetMaker
             bar.Controls.Add(title);
             BuildProjectTitleControls(bar, title);
             bar.Controls.Add(caption);
+            BuildUpdateTitleControls(bar, caption);
             centerContent();
             return bar;
         }
@@ -2962,6 +3244,7 @@ namespace SpriteSheetMaker
             {
                 if (e.KeyCode == Keys.Escape) dialog.DialogResult = DialogResult.Cancel;
             };
+            DialogMotion.Attach(dialog, this);   // 少し下から浮き上がり、後ろを薄く暗くする
             return dialog;
         }
 
@@ -2983,7 +3266,7 @@ namespace SpriteSheetMaker
             if (e.KeyCode == Keys.F && !e.Control && !e.Alt && !e.Shift &&
                 lastClickedCanvas != null && !IsTextInputFocused(this))
             {
-                lastClickedCanvas.ResetToFit();
+                lastClickedCanvas.ResetToFitAnimated();
                 e.Handled = true;
                 e.SuppressKeyPress = true;
                 return;
@@ -3234,6 +3517,9 @@ namespace SpriteSheetMaker
                 playerJumpDistanceBox.Value = ClampDecimal(target.PlayerJumpDistance, playerJumpDistanceBox.Minimum, playerJumpDistanceBox.Maximum);
                 playerGravityBox.Value = ClampDecimal(target.PlayerGravity, playerGravityBox.Minimum, playerGravityBox.Maximum);
                 playerGroundOffsetBox.Value = ClampDecimal(target.PlayerGroundOffset, playerGroundOffsetBox.Minimum, playerGroundOffsetBox.Maximum);
+                playerColliderWidthBox.Value = ClampDecimal(target.PlayerColliderWidth, playerColliderWidthBox.Minimum, playerColliderWidthBox.Maximum);
+                playerColliderHeightBox.Value = ClampDecimal(target.PlayerColliderHeight, playerColliderHeightBox.Minimum, playerColliderHeightBox.Maximum);
+                playerColliderVisibleCheckBox.Checked = target.ShowCollider;
                 mirrorMissingDirectionsCheckBox.Checked = target.MirrorMissingDirections;
                 effectDirectionXBox.Value = ClampDecimal(target.EffectDirectionX, effectDirectionXBox.Minimum, effectDirectionXBox.Maximum);
                 effectDirectionYBox.Value = ClampDecimal(target.EffectDirectionY, effectDirectionYBox.Minimum, effectDirectionYBox.Maximum);
@@ -3254,6 +3540,8 @@ namespace SpriteSheetMaker
             {
                 restoringState = false;
             }
+            // 復元中に画像を読み込んだ場合、そこでは初期値を入れないので、ここで入れる（古いファイルの 0 も含む）。
+            EnsureColliderDefaults();
         }
 
         private AppStateSnapshot CaptureState()
@@ -3277,6 +3565,9 @@ namespace SpriteSheetMaker
             state.PlayerJumpDistance = playerJumpDistanceBox.Value;
             state.PlayerGravity = playerGravityBox.Value;
             state.PlayerGroundOffset = playerGroundOffsetBox.Value;
+            state.PlayerColliderWidth = playerColliderWidthBox.Value;
+            state.PlayerColliderHeight = playerColliderHeightBox.Value;
+            state.ShowCollider = playerColliderVisibleCheckBox.Checked;
             state.MirrorMissingDirections = mirrorMissingDirectionsCheckBox.Checked;
             state.BackgroundPalette = backgroundPaletteComboBox.SelectedIndex;
             state.BlackTransparency = blackTransparencyCheckBox.Checked;
@@ -3322,6 +3613,8 @@ namespace SpriteSheetMaker
                 left.PreviewMode != right.PreviewMode || left.PlayerMoveSpeed != right.PlayerMoveSpeed ||
                 left.PlayerJumpDistance != right.PlayerJumpDistance || left.PlayerGravity != right.PlayerGravity ||
                 left.PlayerGroundOffset != right.PlayerGroundOffset ||
+                left.PlayerColliderWidth != right.PlayerColliderWidth || left.PlayerColliderHeight != right.PlayerColliderHeight ||
+                left.ShowCollider != right.ShowCollider ||
                 left.MirrorMissingDirections != right.MirrorMissingDirections ||
                 left.BackgroundPalette != right.BackgroundPalette ||
                 left.BlackTransparency != right.BlackTransparency ||
@@ -3503,7 +3796,7 @@ namespace SpriteSheetMaker
             };
             spinner.Paint += (s, e) =>
             {
-                Color color = spinnerHover ? lightText : mutedText;
+                Color color = !host.Enabled ? disabledText : spinnerHover ? lightText : mutedText;
                 using (var pen = new Pen(color, 1.4f))
                 {
                     pen.StartCap = System.Drawing.Drawing2D.LineCap.Round;
@@ -3539,11 +3832,21 @@ namespace SpriteSheetMaker
                 Rectangle bounds = new Rectangle(0, 0, host.Width - 1, host.Height - 1);
                 using (var path = CreateRoundedPath(bounds, RadiusMd))
                 {
-                    using (var brush = new SolidBrush(inputBack))
+                    using (var brush = new SolidBrush(host.Enabled ? inputBack : darkPanel))
                         e.Graphics.FillPath(brush, path);
-                    using (var pen = new Pen(inputBorder))
+                    using (var pen = new Pen(host.Enabled ? inputBorder : dividerColor))
                         e.Graphics.DrawPath(pen, path);
                 }
+            };
+            // 無効のときは、枠・文字・矢印を灰色にして、触れないことが分かるようにする。
+            host.EnabledChanged += (s, e) =>
+            {
+                editor.BackColor = host.Enabled ? inputBack : darkPanel;
+                editor.ForeColor = host.Enabled ? lightText : disabledText;
+                spinner.BackColor = host.Enabled ? inputBack : darkPanel;
+                spinner.Cursor = host.Enabled ? Cursors.Hand : Cursors.Default;
+                spinner.Invalidate();
+                host.Invalidate();
             };
             updateEditorBounds();
             return host;
@@ -3735,7 +4038,8 @@ namespace SpriteSheetMaker
                 mainSplit.Panel1MinSize = 80;
                 mainSplit.Panel2MinSize = 120;
 
-                int target = 384;
+                // タブを切り替えたときと同じ幅（3ページのうち最大）で始める。起動直後だけ狭いと、最初の切り替えで幅が跳ねる。
+                int target = GetDesiredLeftWidth();
                 int min = mainSplit.Panel1MinSize;
                 int max = mainSplit.Width - mainSplit.Panel2MinSize - mainSplit.SplitterWidth;
 
@@ -3745,6 +4049,7 @@ namespace SpriteSheetMaker
                 }
             }
 
+            AdjustLeftWorkspaceWidth();
             ApplyPreviewSplitOnly();
         }
 
@@ -3819,7 +4124,13 @@ namespace SpriteSheetMaker
                     return;
                 }
 
-                AddAutoFolder(dialog.FileNames, false, GetSelectedTargetFolder());
+                // ドラッグ＆ドロップ・フォルダ追加と同じく、ファイル名の昇順（数字は数の大きさ順）で入れる。
+                if (!dialog.FileNames.Any(IsSupportedImagePath))
+                {
+                    ShowNoImagesFoundWarning();
+                    return;
+                }
+                AddAutoFolder(dialog.FileNames, true, GetSelectedTargetFolder());
             }
         }
 
@@ -3832,7 +4143,7 @@ namespace SpriteSheetMaker
                     return;
                 }
 
-                AddDirectoryFolder(dialog.SelectedPath);
+                if (AddDirectoryFolder(dialog.SelectedPath) == 0) ShowNoImagesFoundWarning();
                 UpdateTree();
                 QueuePreviewUpdate();
                 CommitUndoableChange();
@@ -4457,12 +4768,13 @@ namespace SpriteSheetMaker
             try
             {
                 var filePaths = new List<string>();
+                int imagesFound = 0;   // 対応形式の画像の数（すでに追加済みのものも数える）
 
                 foreach (var path in paths)
                 {
                     if (Directory.Exists(path))
                     {
-                        AddDirectoryFolder(path);
+                        imagesFound += AddDirectoryFolder(path);
                     }
                     else if (File.Exists(path))
                     {
@@ -4470,10 +4782,12 @@ namespace SpriteSheetMaker
                     }
                 }
 
+                imagesFound += filePaths.Count(IsSupportedImagePath);
                 if (filePaths.Count > 0)
                 {
                     AddAutoFolderCore(filePaths, true, targetFolder, directOnFolder);
                 }
+                if (imagesFound == 0) ShowNoImagesFoundWarning();
 
                 UpdateTree();
                 QueuePreviewUpdate();
@@ -4486,19 +4800,33 @@ namespace SpriteSheetMaker
             }
         }
 
-        private void AddDirectoryFolder(string directoryPath)
-        {
-            string[] allowed = { ".png", ".jpg", ".jpeg", ".bmp" };
+        private static readonly string[] SupportedImageExtensions = { ".png", ".jpg", ".jpeg", ".bmp" };
 
-            var files = Directory.GetFiles(directoryPath, "*.*", SearchOption.TopDirectoryOnly)
-                .Where(path => allowed.Contains(Path.GetExtension(path).ToLowerInvariant()))
+        private static bool IsSupportedImagePath(string path)
+        {
+            return SupportedImageExtensions.Contains(Path.GetExtension(path).ToLowerInvariant());
+        }
+
+        // 追加できる画像（対応形式）が1枚も無かったとき。画像以外のファイルは知らせずに除外する。
+        private void ShowNoImagesFoundWarning()
+        {
+            ShowDarkNotice(Loc.T("dialog.noImagesFoundTitle"), Loc.T("message.noImagesFound"));
+        }
+
+        // 戻り値は、フォルダ直下にあった対応形式の画像の数（すでに追加済みで今回入らなかったものも含む）。
+        private int AddDirectoryFolder(string directoryPath)
+        {
+            List<string> images = Directory.GetFiles(directoryPath, "*.*", SearchOption.TopDirectoryOnly)
+                .Where(IsSupportedImagePath)
+                .ToList();
+            var files = images
                 .Where(path => !ContainsPath(path))
                 .OrderBy(path => Path.GetFileName(path), NaturalStringComparer.Instance)
                 .ToList();
 
             if (files.Count == 0)
             {
-                return;
+                return images.Count;
             }
 
             string sourceFolderName = Path.GetFileName(directoryPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
@@ -4510,6 +4838,7 @@ namespace SpriteSheetMaker
             }
 
             folders.Add(folder);
+            return images.Count;
         }
 
         private void AddAutoFolder(IEnumerable<string> files, bool sortThisFolder, ImageFolder targetFolder)
@@ -4794,6 +5123,79 @@ namespace SpriteSheetMaker
             CommitUndoableChange();
         }
 
+        //--------------
+        // フォルダの開閉の動き
+        //--------------
+        private const int TreeAccordionMilliseconds = 180;
+        private Bitmap treeBeforeToggle;
+        private TreeNode treeToggleNode;
+        private int treeToggleRowBottom;
+        private TreeAccordionOverlay treeAccordion;
+
+        private void CaptureTreeBeforeToggle(TreeNode node)
+        {
+            if (treeAccordion != null) treeAccordion.Finish();   // 続けて開閉したら前の動きは打ち切る
+            treeAccordion = null;
+            if (treeBeforeToggle != null) { treeBeforeToggle.Dispose(); treeBeforeToggle = null; }
+            treeToggleNode = null;
+            if (!UiMotion.Enabled || node == null || node.TreeView != treeView || !treeView.IsHandleCreated || !treeView.Visible ||
+                treeView.ClientSize.Width <= 0 || treeView.ClientSize.Height <= 0 || node.Nodes.Count == 0)
+                return;
+            treeBeforeToggle = CaptureTreeClient();
+            treeToggleNode = node;
+            treeToggleRowBottom = node.Bounds.Bottom;
+        }
+
+        // ツリーの見えている範囲（スクロールバーを除く）を画像にする。
+        private Bitmap CaptureTreeClient()
+        {
+            using (var whole = new Bitmap(treeView.Width, treeView.Height))
+            {
+                treeView.DrawToBitmap(whole, new Rectangle(0, 0, whole.Width, whole.Height));
+                Point client = treeView.PointToScreen(Point.Empty);
+                Point window = treeView.Parent.PointToScreen(treeView.Location);
+                var image = new Bitmap(treeView.ClientSize.Width, treeView.ClientSize.Height);
+                using (Graphics g = Graphics.FromImage(image))
+                    g.DrawImage(whole, new Rectangle(0, 0, image.Width, image.Height),
+                        new Rectangle(client.X - window.X, client.Y - window.Y, image.Width, image.Height), GraphicsUnit.Pixel);
+                return image;
+            }
+        }
+
+        private void StartTreeAccordion(TreeNode node, bool expanding)
+        {
+            Bitmap before = treeBeforeToggle;
+            treeBeforeToggle = null;
+            bool sameNode = ReferenceEquals(node, treeToggleNode);
+            treeToggleNode = null;
+            if (before == null) return;
+            // 開閉でスクロール位置が動いた（行の位置が変わった）ときは、ずれた絵になるので動きを付けない。
+            if (!sameNode || node.Bounds.Bottom != treeToggleRowBottom || before.Size != treeView.ClientSize)
+            {
+                before.Dispose();
+                return;
+            }
+            treeView.Update();
+            Bitmap after = CaptureTreeClient();
+            int splitY = Math.Max(0, Math.Min(treeView.ClientSize.Height, treeToggleRowBottom));
+            int reveal = Math.Min(treeView.ClientSize.Height - splitY, node.Nodes.Count * treeView.ItemHeight);
+            if (reveal <= 0)
+            {
+                before.Dispose();
+                after.Dispose();
+                return;
+            }
+            var overlay = new TreeAccordionOverlay(before, after, splitY, reveal, expanding, TreeAccordionMilliseconds)
+            {
+                Dock = DockStyle.Fill,
+                BackColor = darkPanel
+            };
+            treeAccordion = overlay;
+            overlay.Disposed += (s, e) => { if (treeAccordion == overlay) treeAccordion = null; };
+            treeView.Controls.Add(overlay);   // ツリー（ネイティブの窓）の子にすると、確実に手前に描ける
+            overlay.BringToFront();
+        }
+
         private void UpdateTree()
         {
             object primarySelection = treeView.SelectedNode == null ? null : treeView.SelectedNode.Tag;
@@ -4972,6 +5374,7 @@ namespace SpriteSheetMaker
             exportPngButton.Enabled = false;
             exportTgaButton.Enabled = false;
             exportGifButton.Enabled = false;
+            exportWebPButton.Enabled = false;
             loadingIndicatorLabel.Update();
             if (statusLabel.Owner != null) statusLabel.Owner.Update();
         }
@@ -4994,6 +5397,7 @@ namespace SpriteSheetMaker
             exportPngButton.Enabled = canExport;
             exportTgaButton.Enabled = canExport;
             exportGifButton.Enabled = canExport;
+            exportWebPButton.Enabled = canExport;
             if (statusLabel.Text == Loc.T("status.loading")) statusLabel.Text = statusBeforeLoading;
         }
 
@@ -5010,6 +5414,7 @@ namespace SpriteSheetMaker
             int originalStrength = spriteAdjustmentStrength;
             using (var dialog = new ColorAdjustmentDialog(colorBlendMode, spriteAdjustmentColor, spriteAdjustmentStrength))
             {
+                DialogMotion.Attach(dialog, this);
                 dialog.AdjustmentChanged += (s, e) =>
                 {
                     colorBlendMode = dialog.BlendMode;
@@ -5450,6 +5855,16 @@ namespace SpriteSheetMaker
             PointF position = previewTargetMode == PreviewTargetMode.Player
                 ? playerState.Position
                 : effectMotion.Position;
+            RectangleF collider = RectangleF.Empty;
+            if (previewTargetMode == PreviewTargetMode.Player && playerColliderVisibleCheckBox.Checked)
+            {
+                // コライダーは当たり判定の位置（接地オフセットで画像をずらす前）に、画像の中心に合わせて描く。
+                Size display = SimulationDisplaySizeOf(cache.NominalSize);
+                SizeF box = PlayerColliderSceneSize(cache.NominalSize);
+                collider = new RectangleF(position.X + display.Width * 0.5f - box.Width * 0.5f,
+                    position.Y + display.Height * 0.5f - box.Height * 0.5f, box.Width, box.Height);
+            }
+            animCanvas.SetSceneCollider(collider);
             if (previewTargetMode == PreviewTargetMode.Player)
                 position.Y += GroundContact.ToSceneOffset((int)playerGroundOffsetBox.Value,
                     cache.NominalSize.Height, SimulationDisplaySizeOf(cache.NominalSize));
@@ -5557,6 +5972,7 @@ namespace SpriteSheetMaker
                 ? Math.Min(999, availableMaxCell)
                 : Math.Max(effectClip.StartCell, Math.Min(999, effectClip.EndCell));
             simulationRangesInitialized = simulationRangesInitialized || animationFrames.Count > 0;
+            EnsureColliderDefaults();
 
             syncingStateEditor = true;
             stateStartBox.Maximum = maxCell;
@@ -5623,6 +6039,48 @@ namespace SpriteSheetMaker
         private static Size GetSimulationDisplaySize(Bitmap sprite)
         {
             return sprite == null ? new Size(64, 64) : SimulationDisplaySizeOf(sprite.Size);
+        }
+
+        // コライダー表示がオフの間は、大きさを変えられないよう灰色にする。
+        private void UpdateColliderInputsEnabled()
+        {
+            if (playerColliderWidthHost == null) return;
+            bool enabled = playerColliderVisibleCheckBox.Checked;
+            playerColliderWidthHost.Enabled = enabled;
+            playerColliderHeightHost.Enabled = enabled;
+            playerColliderWidthLabel.ForeColor = enabled ? lightText : disabledText;
+            playerColliderHeightLabel.ForeColor = enabled ? lightText : disabledText;
+        }
+
+        // コライダーの大きさが未設定（0）なら、最初の画像に合わせた値（幅は半分・高さは同じ、画像ピクセル）を入れる。
+        // 画像を読み込んだだけで未保存の印が付かないよう、変更前に保存済みと同じ状態だったなら基準も合わせて動かす。
+        private void EnsureColliderDefaults()
+        {
+            if (animationFrames.Count == 0 || restoringState) return;
+            if (playerColliderWidthBox.Value != 0 && playerColliderHeightBox.Value != 0) return;
+            Size image = animationFrames[0].NominalSize;
+            if (image.Width <= 0 || image.Height <= 0) return;
+            bool wasClean = projectBaseline != null && !IsProjectDirty();
+            bool wasSyncing = syncingStateEditor;
+            syncingStateEditor = true;   // ここでの値の変更は、取り消しの1手として記録しない
+            try
+            {
+                if (playerColliderWidthBox.Value == 0)
+                    playerColliderWidthBox.Value = ClampDecimal(Math.Max(1, (int)Math.Round(image.Width * 0.5)), 1, playerColliderWidthBox.Maximum);
+                if (playerColliderHeightBox.Value == 0)
+                    playerColliderHeightBox.Value = ClampDecimal(image.Height, 1, playerColliderHeightBox.Maximum);
+            }
+            finally
+            {
+                syncingStateEditor = wasSyncing;
+            }
+            if (wasClean) projectBaseline = CaptureState();
+        }
+
+        private SizeF PlayerColliderSceneSize(Size imageSize)
+        {
+            return ColliderSize.ToScene((int)playerColliderWidthBox.Value, (int)playerColliderHeightBox.Value,
+                imageSize, SimulationDisplaySizeOf(imageSize));
         }
 
         private static Size SimulationDisplaySizeOf(Size sprite)
@@ -5909,6 +6367,7 @@ namespace SpriteSheetMaker
                 float jumpForce = PlayerStateController.JumpForceFromSetting((float)playerJumpDistanceBox.Value, SimulationSceneSize.Height);
                 float gravity = (float)playerGravityBox.Value * SimulationSceneSize.Height * 2.2f;
                 playerState.Update(seconds, previewInput, SimulationSceneSize, SimulationDisplaySizeOf(current.NominalSize),
+                    PlayerColliderSceneSize(current.NominalSize),
                     state => playerAnimator.GetDuration(state, GetMaxCellNumber()),
                     movementSpeed, jumpForce, gravity);
                 playerAnimator.Update(seconds, playerState.State, GetMaxCellNumber(), playerState.MovementState);
@@ -5959,15 +6418,16 @@ namespace SpriteSheetMaker
         // プレビューの見た目を決める値。前回描いたときと同じなら描き直さなくてよい。
         private struct SceneKey : IEquatable<SceneKey>
         {
-            public int Mode, Cell, RequestedState, PlayingState, GroundOffset;
+            public int Mode, Cell, RequestedState, PlayingState, GroundOffset, ColliderWidth, ColliderHeight;
             public float X, Y;
-            public bool Facing, Terrain;
+            public bool Facing, Terrain, ShowCollider;
 
             public bool Equals(SceneKey other)
             {
                 return Mode == other.Mode && Cell == other.Cell && RequestedState == other.RequestedState &&
                     PlayingState == other.PlayingState && GroundOffset == other.GroundOffset &&
-                    X == other.X && Y == other.Y && Facing == other.Facing && Terrain == other.Terrain;
+                    X == other.X && Y == other.Y && Facing == other.Facing && Terrain == other.Terrain &&
+                    ColliderWidth == other.ColliderWidth && ColliderHeight == other.ColliderHeight && ShowCollider == other.ShowCollider;
             }
         }
 
@@ -5982,7 +6442,9 @@ namespace SpriteSheetMaker
                     Mode = 1, Cell = playerAnimator.CurrentCell,
                     RequestedState = (int)playerAnimator.RequestedState, PlayingState = (int)playerAnimator.PlayingState,
                     X = playerState.Position.X, Y = playerState.Position.Y, Facing = playerState.FacingRight,
-                    GroundOffset = (int)playerGroundOffsetBox.Value, Terrain = playerState.Terrain != null
+                    GroundOffset = (int)playerGroundOffsetBox.Value, Terrain = playerState.Terrain != null,
+                    ColliderWidth = (int)playerColliderWidthBox.Value, ColliderHeight = (int)playerColliderHeightBox.Value,
+                    ShowCollider = playerColliderVisibleCheckBox.Checked
                 };
             return new SceneKey { Mode = 2, Cell = effectCurrentCell, X = effectMotion.Position.X, Y = effectMotion.Position.Y };
         }
@@ -6327,6 +6789,9 @@ namespace SpriteSheetMaker
             public decimal PlayerJumpDistance;
             public decimal PlayerGravity;
             public decimal PlayerGroundOffset;
+            public decimal PlayerColliderWidth;
+            public decimal PlayerColliderHeight;
+            public bool ShowCollider;
             public bool MirrorMissingDirections;
             public int BackgroundPalette;
             public bool BlackTransparency;
@@ -6430,7 +6895,8 @@ namespace SpriteSheetMaker
         {
             Png,
             Tga,
-            Gif
+            Gif,
+            WebP
         }
 
         private enum PreviewWorkspacePage

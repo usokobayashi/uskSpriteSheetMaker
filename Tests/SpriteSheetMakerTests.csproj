@@ -51,6 +51,7 @@
     <Compile Include="Program.cs" />
     <Compile Include="TestRunner.cs" />
     <Compile Include="GifWriterTests.cs" />
+    <Compile Include="ApngWriterTests.cs" />
     <Compile Include="ImagePipelineTests.cs" />
     <Compile Include="TgaWriterTests.cs" />
     <Compile Include="UndoManagerTests.cs" />
@@ -62,6 +63,13 @@
     <Compile Include="MemoTests.cs" />
     <Compile Include="StreamingExportTests.cs" />
     <Compile Include="SecurityTests.cs" />
+    <Compile Include="CellRemapTests.cs" />
+    <Compile Include="UpdateCheckerTests.cs" />
+    <Compile Include="WebPWriterTests.cs" />
+    <Compile Include="ColliderTests.cs" />
+    <Compile Include="FolderAddTests.cs" />
+    <Compile Include="PageTransitionTests.cs" />
+    <Compile Include="MotionTests.cs" />
   </ItemGroup>
 
   <ItemGroup>

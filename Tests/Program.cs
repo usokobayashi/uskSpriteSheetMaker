@@ -10,6 +10,7 @@ namespace SpriteSheetMakerTests
         {
             var cases = new List<TestCase>();
             cases.AddRange(GifWriterTests.All());
+            cases.AddRange(ApngWriterTests.All());
             cases.AddRange(ImagePipelineTests.All());
             cases.AddRange(PreviewCanvasTests.All());
             cases.AddRange(TgaWriterTests.All());
@@ -21,6 +22,13 @@ namespace SpriteSheetMakerTests
             cases.AddRange(MemoTests.All());
             cases.AddRange(StreamingExportTests.All());
             cases.AddRange(SecurityTests.All());
+            cases.AddRange(CellRemapTests.All());
+            cases.AddRange(UpdateCheckerTests.All());
+            cases.AddRange(WebPWriterTests.All());
+            cases.AddRange(ColliderTests.All());
+            cases.AddRange(FolderAddTests.All());
+            cases.AddRange(PageTransitionTests.All());
+            cases.AddRange(MotionTests.All());
 
             int failed = TestRunner.RunAll(cases);
             return failed == 0 ? 0 : 1;

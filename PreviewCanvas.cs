@@ -16,6 +16,8 @@ namespace SpriteSheetMaker
         private Bitmap sceneSprite;
         private Size sceneSize;
         private RectangleF sceneSpriteRect;
+        private RectangleF sceneColliderRect;      // キャラクターのコライダー（シーン座標）。空なら表示しない
+        private RectangleF pendingColliderRect;
         private Color sceneFloorColor;
         private Bitmap floorTile;
         private Terrain terrain;
@@ -162,7 +164,7 @@ namespace SpriteSheetMaker
 
             BackColor = Color.FromArgb(17, 23, 28);
             TabStop = true;
-            DoubleClick += (s, e) => ResetToFit();
+            DoubleClick += (s, e) => ResetToFitAnimated();
         }
 
         public float ZoomPercent
@@ -177,9 +179,10 @@ namespace SpriteSheetMaker
             }
         }
 
+        // 全体表示へ戻る途中も「全体表示」として扱う（拡大率の表示などが先に100%になる）。
         public bool IsFitMode
         {
-            get { return zoom <= 0.0f; }
+            get { return zoom <= 0.0f || fitAnimating; }
         }
 
         public void SetImage(Bitmap newImage, List<PreviewRect> newRects)
@@ -270,11 +273,23 @@ namespace SpriteSheetMaker
             Invalidate();
         }
 
+        // 次の SetScene で一緒に描くコライダー。表示しないときは RectangleF.Empty。
+        public void SetSceneCollider(RectangleF logicalRect)
+        {
+            pendingColliderRect = logicalRect;
+        }
+
+        public RectangleF SceneCollider
+        {
+            get { return sceneColliderRect; }
+        }
+
         public void SetScene(Bitmap sprite, Size logicalSceneSize, PointF logicalPosition,
             Size logicalSpriteSize, Color floorColor, float floorRatio, bool mirrorHorizontally)
         {
             bool wasScene = sceneSprite != null && !sceneSize.IsEmpty && image == null;
             RectangleF previousSprite = sceneSpriteRect;
+            RectangleF previousCollider = sceneColliderRect;
             Size previousScene = sceneSize;
             Color previousFloorColor = sceneFloorColor;
             float previousRatio = sceneFloorRatio;
@@ -288,6 +303,7 @@ namespace SpriteSheetMaker
             sceneSprite = sprite;
             sceneSize = logicalSceneSize;
             sceneSpriteRect = new RectangleF(logicalPosition, logicalSpriteSize);
+            sceneColliderRect = pendingColliderRect;
             sceneFloorColor = floorColor;
             sceneFloorRatio = Math.Max(0, Math.Min(1, floorRatio));
             sceneMirrorHorizontally = mirrorHorizontally;
@@ -298,7 +314,10 @@ namespace SpriteSheetMaker
                 previousRatio == sceneFloorRatio && sprite != null && Width > 0 && Height > 0;
             if (onlySpriteChanged)
             {
-                RectangleF dirty = SheetToScreen(RectangleF.Union(previousSprite, sceneSpriteRect));
+                RectangleF changed = RectangleF.Union(previousSprite, sceneSpriteRect);
+                if (!previousCollider.IsEmpty) changed = RectangleF.Union(changed, previousCollider);
+                if (!sceneColliderRect.IsEmpty) changed = RectangleF.Union(changed, sceneColliderRect);
+                RectangleF dirty = SheetToScreen(changed);
                 Rectangle area = Rectangle.Ceiling(RectangleF.Inflate(dirty, 3, 3));
                 area.Intersect(ClientRectangle);
                 if (area.Width > 0 && area.Height > 0) Invalidate(area);
@@ -322,8 +341,66 @@ namespace SpriteSheetMaker
             Invalidate();
         }
 
+        //--------------
+        // 全体表示へ戻る動き
+        //--------------
+        public const int FitAnimationMilliseconds = 200;
+        private Timer fitTimer;
+        private readonly System.Diagnostics.Stopwatch fitClock = new System.Diagnostics.Stopwatch();
+        private bool fitAnimating;
+        private float fitFromZoom;
+        private PointF fitFromPan;
+
+        // F キー・全体表示ボタンなど、利用者や自動の「全体表示に戻る」は0.2秒かけて戻す。
+        // 表示前・中身が無い・すでに全体表示・Windowsのアニメーション効果がオフのときは、すぐに戻す。
+        public void ResetToFitAnimated()
+        {
+            if (!HasContent || !IsHandleCreated || !Visible || zoom <= 0.0f || !SystemInformation.UIEffectsEnabled)
+            {
+                ResetToFit();
+                return;
+            }
+            fitFromZoom = GetEffectiveZoom();
+            fitFromPan = GetEffectivePan(fitFromZoom);
+            fitAnimating = true;
+            fitClock.Restart();
+            if (fitTimer == null)
+            {
+                fitTimer = new Timer { Interval = 15 };
+                fitTimer.Tick += (s, e) => StepFitAnimation();
+            }
+            fitTimer.Start();
+            RaiseZoomChanged();
+        }
+
+        private void StepFitAnimation()
+        {
+            float t = PageTransitionOverlay.Ease(fitClock.ElapsedMilliseconds / (float)FitAnimationMilliseconds);
+            if (t >= 1f || !HasContent)
+            {
+                ResetToFit();
+                return;
+            }
+            // 行き先（全体表示の拡大率と位置）は窓の大きさで変わるので、毎回求め直す。
+            zoom = 0.0f;
+            float toZoom = GetEffectiveZoom();
+            PointF toPan = GetEffectivePan(toZoom);
+            zoom = fitFromZoom + (toZoom - fitFromZoom) * t;
+            pan = new PointF(fitFromPan.X + (toPan.X - fitFromPan.X) * t, fitFromPan.Y + (toPan.Y - fitFromPan.Y) * t);
+            Invalidate();
+        }
+
+        // ホイール・ドラッグなどで利用者が動かしたら、戻る動きはその場で止める。
+        private void StopFitAnimation()
+        {
+            if (!fitAnimating) return;
+            fitAnimating = false;
+            if (fitTimer != null) fitTimer.Stop();
+        }
+
         public void ResetToFit()
         {
+            StopFitAnimation();
             zoom = 0.0f;
             pan = new PointF(0, 0);
             RaiseZoomChanged();
@@ -339,6 +416,7 @@ namespace SpriteSheetMaker
         protected override void OnMouseWheel(MouseEventArgs e)
         {
             base.OnMouseWheel(e);
+            StopFitAnimation();
             Focus();
 
             if (!HasContent)
@@ -383,6 +461,7 @@ namespace SpriteSheetMaker
         protected override void OnMouseDown(MouseEventArgs e)
         {
             base.OnMouseDown(e);
+            if (e.Button == MouseButtons.Left || e.Button == MouseButtons.Middle) StopFitAnimation();
 
             pressPoint = e.Location;
             pressMoved = false;
@@ -452,7 +531,7 @@ namespace SpriteSheetMaker
 
             if (e.KeyCode == Keys.D0 || e.KeyCode == Keys.NumPad0)
             {
-                ResetToFit();
+                ResetToFitAnimated();
                 e.Handled = true;
             }
         }
@@ -624,6 +703,21 @@ namespace SpriteSheetMaker
                 if (overLayer != null)
                     g.DrawImage(overLayer, new Rectangle(0, overTop, Width, Height - overTop),
                         new Rectangle(0, overTop, Width, Height - overTop), GraphicsUnit.Pixel);
+
+                if (!sceneColliderRect.IsEmpty)
+                {
+                    var colliderDestination = new RectangleF(
+                        effectivePan.X + sceneColliderRect.X * effectiveZoom,
+                        effectivePan.Y + sceneColliderRect.Y * effectiveZoom,
+                        sceneColliderRect.Width * effectiveZoom,
+                        sceneColliderRect.Height * effectiveZoom);
+                    using (var fill = new SolidBrush(Color.FromArgb(48, 80, 230, 120)))
+                    using (var outline = new Pen(Color.FromArgb(230, 80, 230, 120), 1.5f))
+                    {
+                        g.FillRectangle(fill, colliderDestination);
+                        g.DrawRectangle(outline, colliderDestination.X, colliderDestination.Y, colliderDestination.Width, colliderDestination.Height);
+                    }
+                }
             }
             else
             {
@@ -929,7 +1023,55 @@ namespace SpriteSheetMaker
             }
         }
 
+        //--------------
+        // 選択したセルの枠が一瞬ふくらんで戻る動き
+        //--------------
+        public const int SelectionPopMilliseconds = 180;
+        private const float SelectionPopPixels = 4f;
+        private HashSet<int> drawnSelectedCells = new HashSet<int>();
+        private readonly Dictionary<int, System.Diagnostics.Stopwatch> selectionPops = new Dictionary<int, System.Diagnostics.Stopwatch>();
+        private Timer selectionPopTimer;
+
+        // 今回の描画で新しく選ばれたセルなら動きを始め、ふくらみの量（px）を返す。
+        private float SelectionPopAmount(int cell, HashSet<int> selectedNow)
+        {
+            selectedNow.Add(cell);
+            System.Diagnostics.Stopwatch clock;
+            if (!drawnSelectedCells.Contains(cell) && UiMotion.Enabled && !selectionPops.ContainsKey(cell))
+            {
+                selectionPops[cell] = System.Diagnostics.Stopwatch.StartNew();
+                if (selectionPopTimer == null)
+                {
+                    selectionPopTimer = new Timer { Interval = 15 };
+                    selectionPopTimer.Tick += (s, e) =>
+                    {
+                        foreach (int done in selectionPops.Where(p => p.Value.ElapsedMilliseconds >= SelectionPopMilliseconds).Select(p => p.Key).ToList())
+                            selectionPops.Remove(done);
+                        if (selectionPops.Count == 0) selectionPopTimer.Stop();
+                        Invalidate();
+                    };
+                }
+                selectionPopTimer.Start();
+            }
+            if (!selectionPops.TryGetValue(cell, out clock)) return 0f;
+            float t = Math.Min(1f, clock.ElapsedMilliseconds / (float)SelectionPopMilliseconds);
+            return SelectionPopPixels * (float)Math.Sin(Math.PI * t);
+        }
+
         private void DrawRects(Graphics g, PointF effectivePan, float effectiveZoom)
+        {
+            var selectedNow = new HashSet<int>();
+            try
+            {
+                DrawRectsCore(g, effectivePan, effectiveZoom, selectedNow);
+            }
+            finally
+            {
+                drawnSelectedCells = selectedNow;
+            }
+        }
+
+        private void DrawRectsCore(Graphics g, PointF effectivePan, float effectiveZoom, HashSet<int> selectedNow)
         {
             g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
 
@@ -968,10 +1110,11 @@ namespace SpriteSheetMaker
 
                     if (IsCellSelected != null && IsCellSelected(r.Number))
                     {
+                        float pop = SelectionPopAmount(r.Number, selectedNow);
                         using (var fill = new SolidBrush(Color.FromArgb(80, 84, 73, 255)))
                             g.FillRectangle(fill, sr.X, sr.Y, sr.Width, sr.Height);
                         using (var selectedPen = new Pen(Color.FromArgb(150, 140, 255), 3f))
-                            g.DrawRectangle(selectedPen, sr.X + 1, sr.Y + 1, Math.Max(1, sr.Width - 2), Math.Max(1, sr.Height - 2));
+                            g.DrawRectangle(selectedPen, sr.X + 1 - pop, sr.Y + 1 - pop, Math.Max(1, sr.Width - 2 + pop * 2), Math.Max(1, sr.Height - 2 + pop * 2));
                     }
 
                     // 縮小表示でセルが小さいと、一定サイズの番号バッジがセルを覆って
@@ -994,15 +1137,105 @@ namespace SpriteSheetMaker
         }
 
         // 付箋: 灰色の面＋白寄りの灰色の縁の角丸。文字はコメントのような緑。シート本体にも重なる。
+        //--------------
+        // メモの出入りの動き（追加: 小さい所から広がる / 削除: 縮んで消える）
+        //--------------
+        public const int MemoMotionMilliseconds = 180;
+        private readonly Dictionary<SheetMemo, System.Diagnostics.Stopwatch> appearingMemos = new Dictionary<SheetMemo, System.Diagnostics.Stopwatch>();
+        private readonly List<KeyValuePair<SheetMemo, System.Diagnostics.Stopwatch>> vanishingMemos = new List<KeyValuePair<SheetMemo, System.Diagnostics.Stopwatch>>();
+        private Timer memoMotionTimer;
+
+        public void AnimateMemoAppear(SheetMemo memo)
+        {
+            if (!UiMotion.Enabled || memo == null) return;
+            appearingMemos[memo] = System.Diagnostics.Stopwatch.StartNew();
+            StartMemoMotion();
+        }
+
+        // 一覧から外したメモを、縮みながら消えるように少しの間だけ描く。
+        public void AnimateMemoVanish(SheetMemo memo)
+        {
+            if (!UiMotion.Enabled || memo == null) return;
+            appearingMemos.Remove(memo);
+            vanishingMemos.Add(new KeyValuePair<SheetMemo, System.Diagnostics.Stopwatch>(memo, System.Diagnostics.Stopwatch.StartNew()));
+            StartMemoMotion();
+        }
+
+        public bool MemoMotionRunning
+        {
+            get { return appearingMemos.Count > 0 || vanishingMemos.Count > 0; }
+        }
+
+        private void StartMemoMotion()
+        {
+            if (memoMotionTimer == null)
+            {
+                memoMotionTimer = new Timer { Interval = 15 };
+                memoMotionTimer.Tick += (s, e) =>
+                {
+                    foreach (SheetMemo done in appearingMemos.Where(p => p.Value.ElapsedMilliseconds >= MemoMotionMilliseconds).Select(p => p.Key).ToList())
+                        appearingMemos.Remove(done);
+                    vanishingMemos.RemoveAll(p => p.Value.ElapsedMilliseconds >= MemoMotionMilliseconds);
+                    if (!MemoMotionRunning) memoMotionTimer.Stop();
+                    Invalidate();
+                };
+            }
+            memoMotionTimer.Start();
+            Invalidate();
+        }
+
+        // 0〜1 の大きさ（1 が通常）。出入りの途中でなければ 1。
+        private float MemoScale(SheetMemo memo, bool vanishing, System.Diagnostics.Stopwatch clock)
+        {
+            float t = PageTransitionOverlay.Ease(clock.ElapsedMilliseconds / (float)MemoMotionMilliseconds);
+            return vanishing ? 1f - t : 0.55f + 0.45f * t;
+        }
+
         private void DrawMemos(Graphics g, PointF pan, float zoom)
         {
             if (!MemosActive) return;
             SmoothingMode previousSmoothing = g.SmoothingMode;
             g.SmoothingMode = SmoothingMode.AntiAlias;
+            foreach (KeyValuePair<SheetMemo, System.Diagnostics.Stopwatch> gone in vanishingMemos)
+                DrawMemo(g, pan, zoom, gone.Key, MemoScale(gone.Key, true, gone.Value));
             foreach (SheetMemo memo in Memos)
             {
+                System.Diagnostics.Stopwatch appearing;
+                DrawMemo(g, pan, zoom, memo, appearingMemos.TryGetValue(memo, out appearing) ? MemoScale(memo, false, appearing) : 1f);
+            }
+            g.SmoothingMode = previousSmoothing;
+        }
+
+        // scale が 1 未満のときは中心を軸に縮めて描く（文字はその間だけ GDI+ で描く。TextRenderer は縮小に対応しないため）。
+        private void DrawMemo(Graphics g, PointF pan, float zoom, SheetMemo memo, float scale)
+        {
+            if (scale <= 0.01f) return;
+            {
                 var rect = new RectangleF(pan.X + memo.X * zoom, pan.Y + memo.Y * zoom, memo.Width * zoom, memo.Height * zoom);
-                if (rect.Right < 0 || rect.Bottom < 0 || rect.Left > Width || rect.Top > Height) continue;
+                if (rect.Right < 0 || rect.Bottom < 0 || rect.Left > Width || rect.Top > Height) return;
+                GraphicsState saved = null;
+                if (scale < 1f)
+                {
+                    saved = g.Save();
+                    float cx = rect.X + rect.Width / 2f, cy = rect.Y + rect.Height / 2f;
+                    g.TranslateTransform(cx, cy);
+                    g.ScaleTransform(scale, scale);
+                    g.TranslateTransform(-cx, -cy);
+                }
+                try
+                {
+                    DrawMemoBody(g, memo, rect, zoom, scale < 1f);
+                }
+                finally
+                {
+                    if (saved != null) g.Restore(saved);
+                }
+            }
+        }
+
+        private void DrawMemoBody(Graphics g, SheetMemo memo, RectangleF rect, float zoom, bool scaled)
+        {
+            {
                 float radius = Math.Max(1f, MemoText.CornerRadius(memo.Width) * zoom);
                 bool editing = ReferenceEquals(memo, EditingMemo);
                 using (GraphicsPath shadow = CreateMemoPath(new RectangleF(rect.X + 2, rect.Y + 3, rect.Width, rect.Height), radius))
@@ -1015,7 +1248,7 @@ namespace SpriteSheetMaker
                     using (var border = new Pen(editing ? Color.FromArgb(150, 140, 255) : Color.FromArgb(205, 210, 215), editing ? 2f : 1.5f))
                         g.DrawPath(border, path);
                 }
-                if (editing || string.IsNullOrEmpty(memo.Text)) continue;
+                if (editing || string.IsNullOrEmpty(memo.Text)) return;
 
                 float fontPixels = MemoText.FontSize(memo.Width) * zoom;
                 float pad = MemoText.Padding(memo.Width) * zoom;
@@ -1030,17 +1263,25 @@ namespace SpriteSheetMaker
                             float y = rect.Y + pad + (i + 0.5f) * lineStep;
                             g.DrawLine(hint, rect.X + pad, y, rect.X + pad + Math.Max(2f, rect.Width - 2 * pad) * Math.Min(1f, memo.Lines[i].Length / 10f), y);
                         }
-                    continue;
+                    return;
                 }
                 using (Font font = UiFont.Create(fontPixels, FontStyle.Regular, GraphicsUnit.Pixel))
+                {
+                    if (scaled)
+                    {
+                        using (var brush = new SolidBrush(MemoTextColor))
+                            for (int i = 0; i < memo.Lines.Count; i++)
+                                g.DrawString(memo.Lines[i], font, brush, rect.X + pad, rect.Y + pad + i * lineStep, StringFormat.GenericTypographic);
+                        return;
+                    }
                     for (int i = 0; i < memo.Lines.Count; i++)
                         TextRenderer.DrawText(g, memo.Lines[i], font,
                             new Rectangle((int)Math.Round(rect.X + pad), (int)Math.Round(rect.Y + pad + i * lineStep),
                                 (int)Math.Ceiling(rect.Width - pad) + 2, (int)Math.Ceiling(lineStep) + 2),
                             MemoTextColor, TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine |
                             TextFormatFlags.Left | TextFormatFlags.Top);
+                }
             }
-            g.SmoothingMode = previousSmoothing;
         }
 
         // コメントのような緑色。
@@ -1124,6 +1365,9 @@ namespace SpriteSheetMaker
 
         protected override void Dispose(bool disposing)
         {
+            if (disposing && fitTimer != null) { fitTimer.Dispose(); fitTimer = null; }
+            if (disposing && memoMotionTimer != null) { memoMotionTimer.Dispose(); memoMotionTimer = null; }
+            if (disposing && selectionPopTimer != null) { selectionPopTimer.Dispose(); selectionPopTimer = null; }
             if (disposing && image != null)
             {
                 image.Dispose();

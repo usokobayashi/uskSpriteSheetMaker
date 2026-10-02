@@ -176,6 +176,7 @@ namespace SpriteSheetMaker
         {
             string oldDirectory = projectExtractDir;
             RestoreState(defaultSnapshot);
+            ResetViewsToFit();
             previewSheetRatio = null;
             ApplyPreviewSplitOnly();
             ResetUndoHistory();
@@ -284,6 +285,7 @@ namespace SpriteSheetMaker
 
             string oldDirectory = projectExtractDir;
             RestoreState(SnapshotFromDocument(loaded.Document));
+            ResetViewsToFit();
             double ratio = loaded.Document.SheetPaneRatio;
             previewSheetRatio = ratio > 0.1 && ratio < 0.9 ? ratio : (double?)null;
             ApplyPreviewSplitOnly();
@@ -350,6 +352,9 @@ namespace SpriteSheetMaker
                 PlayerJump = state.PlayerJumpDistance,
                 PlayerGravity = state.PlayerGravity,
                 PlayerGroundOffset = state.PlayerGroundOffset,
+                PlayerColliderWidth = state.PlayerColliderWidth,
+                PlayerColliderHeight = state.PlayerColliderHeight,
+                ShowCollider = state.ShowCollider,
                 MirrorMissingDirections = state.MirrorMissingDirections,
                 BackgroundPalette = state.BackgroundPalette,
                 BlackTransparency = state.BlackTransparency,
@@ -397,6 +402,9 @@ namespace SpriteSheetMaker
                 PlayerJumpDistance = document.PlayerJump,
                 PlayerGravity = document.PlayerGravity,
                 PlayerGroundOffset = document.PlayerGroundOffset,
+                PlayerColliderWidth = document.PlayerColliderWidth,
+                PlayerColliderHeight = document.PlayerColliderHeight,
+                ShowCollider = document.ShowCollider,
                 MirrorMissingDirections = document.MirrorMissingDirections,
                 BackgroundPalette = document.BackgroundPalette,
                 BlackTransparency = document.BlackTransparency,

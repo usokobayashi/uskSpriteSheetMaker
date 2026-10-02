@@ -125,8 +125,10 @@ namespace SpriteSheetMaker
             }
         }
 
-        // 別スレッドから呼べる。開始〜終了セルのコマをGIFアニメーションへ書き出す。
-        private void ExportGifFile(string path, ExportSnapshot snapshot, Action<double> progress, CancellationToken cancellationToken)
+        // 別スレッドから呼べる。開始〜終了セルのコマをGIF/WebPアニメーションへ書き出す。
+        // 両形式ともコマの集め方・描き方は同じで、最後に呼ぶエンコーダーだけが違う。
+        private void ExportAnimationFile(ImageOutputFormat format, string path, ExportSnapshot snapshot,
+            Action<double> progress, CancellationToken cancellationToken)
         {
             SheetLayout layout = BuildExportLayout(snapshot);
             var selected = layout.Placements
@@ -135,14 +137,16 @@ namespace SpriteSheetMaker
             if (selected.Count == 0)
                 throw new InvalidOperationException(Loc.T("message.noGifFrames"));
 
-            // GIFの各フレームは同じ大きさである必要があるため、最大サイズに揃える。
+            // 各フレームは同じ大きさである必要があるため、最大サイズに揃える。
             int frameWidth = selected.Max(p => p.CellRect.Width);
             int frameHeight = selected.Max(p => p.CellRect.Height);
-            if (frameWidth > ushort.MaxValue || frameHeight > ushort.MaxValue)
+            // GIFは規格上65,535px、WebPは16,384pxまで。
+            if (format == ImageOutputFormat.Gif && (frameWidth > ushort.MaxValue || frameHeight > ushort.MaxValue))
                 throw new InvalidOperationException(Loc.T("error.gifTooLarge", frameWidth, frameHeight));
+            if (format == ImageOutputFormat.WebP && (frameWidth > WebPWriter.MaxDimension || frameHeight > WebPWriter.MaxDimension))
+                throw new InvalidOperationException(Loc.T("error.webpTooLarge", frameWidth, frameHeight));
 
-            int delayMs = Math.Max(1, 1000 / snapshot.Fps);
-            GifWriter.SaveAnimatedGif(path, frameWidth, frameHeight, selected.Count, index =>
+            Func<int, Bitmap> getFrame = index =>
             {
                 FramePlacement placement = selected[index];
                 var frame = new Bitmap(frameWidth, frameHeight, PixelFormat.Format32bppArgb);
@@ -170,15 +174,31 @@ namespace SpriteSheetMaker
                     frame.Dispose();
                     throw;
                 }
-            }, true, delayMs, progress, cancellationToken);
+            };
+
+            int delayMs = Math.Max(1, 1000 / snapshot.Fps);
+            if (format == ImageOutputFormat.WebP)
+                WebPWriter.SaveAnimatedWebP(path, frameWidth, frameHeight, selected.Count, getFrame, true, delayMs, progress, cancellationToken);
+            else
+                GifWriter.SaveAnimatedGif(path, frameWidth, frameHeight, selected.Count, getFrame, true, delayMs, progress, cancellationToken);
+        }
+
+        private void ExportGifFile(string path, ExportSnapshot snapshot, Action<double> progress, CancellationToken cancellationToken)
+        {
+            ExportAnimationFile(ImageOutputFormat.Gif, path, snapshot, progress, cancellationToken);
+        }
+
+        private void ExportWebPFile(string path, ExportSnapshot snapshot, Action<double> progress, CancellationToken cancellationToken)
+        {
+            ExportAnimationFile(ImageOutputFormat.WebP, path, snapshot, progress, cancellationToken);
         }
 
         // 画面の状態そのままで書き出す（同期）。テストやスクリプトから使う。
         private void ExportToFile(ImageOutputFormat format, string path)
         {
             ExportSnapshot snapshot = CaptureExportSnapshot();
-            if (format == ImageOutputFormat.Gif)
-                ExportGifFile(path, snapshot, null, CancellationToken.None);
+            if (format == ImageOutputFormat.Gif || format == ImageOutputFormat.WebP)
+                ExportAnimationFile(format, path, snapshot, null, CancellationToken.None);
             else
                 ExportSheetFile(format, path, snapshot, null, CancellationToken.None);
         }
@@ -187,6 +207,12 @@ namespace SpriteSheetMaker
         {
             ExportToFile(ImageOutputFormat.Gif, path);
             statusLabel.Text = Loc.T("message.exported", "GIF", Path.GetFileName(path));
+        }
+
+        private void ExportWebP(string path)
+        {
+            ExportToFile(ImageOutputFormat.WebP, path);
+            statusLabel.Text = Loc.T("message.exported", "WebP", Path.GetFileName(path));
         }
 
         // シート全体を1枚のビットマップとして作る。小さなシート（テストや確認用）向けで、
@@ -228,11 +254,17 @@ namespace SpriteSheetMaker
                     dialog.DefaultExt = "tga";
                     dialog.FileName = "spritesheet.tga";
                 }
-                else
+                else if (format == ImageOutputFormat.Gif)
                 {
                     dialog.Filter = "GIF Image (*.gif)|*.gif";
                     dialog.DefaultExt = "gif";
                     dialog.FileName = "animation.gif";
+                }
+                else
+                {
+                    dialog.Filter = "Animated WebP (*.webp)|*.webp";
+                    dialog.DefaultExt = "webp";
+                    dialog.FileName = "animation.webp";
                 }
 
                 if (dialog.ShowDialog(this) != DialogResult.OK) return;
@@ -244,11 +276,12 @@ namespace SpriteSheetMaker
 
         private async void RunExport(ImageOutputFormat format, string path)
         {
-            string label = format.ToString().ToUpperInvariant();
+            string label = format == ImageOutputFormat.WebP ? "WebP" : format.ToString().ToUpperInvariant();
             ExportSnapshot snapshot = CaptureExportSnapshot();
             exportCancellation = new CancellationTokenSource();
             CancellationToken token = exportCancellation.Token;
             SetExportBusy(true);
+            StartExportBar();
             statusLabel.Text = Loc.T("message.exporting", label, 0);
 
             bool canceled = false;
@@ -258,8 +291,10 @@ namespace SpriteSheetMaker
                 Action<double> progress = fraction => ReportExportProgress(label, fraction);
                 exportWorker = Task.Run(() =>
                 {
-                    if (format == ImageOutputFormat.Gif) ExportGifFile(path, snapshot, progress, token);
-                    else ExportSheetFile(format, path, snapshot, progress, token);
+                    if (format == ImageOutputFormat.Gif || format == ImageOutputFormat.WebP)
+                        ExportAnimationFile(format, path, snapshot, progress, token);
+                    else
+                        ExportSheetFile(format, path, snapshot, progress, token);
                 });
                 await exportWorker;
             }
@@ -284,6 +319,7 @@ namespace SpriteSheetMaker
             exportCancellation = null;
             if (source != null) source.Dispose();
             SetExportBusy(false);
+            FinishExportBar(!canceled && failure == null);
             if (canceled)
             {
                 statusLabel.Text = Loc.T("message.exportCanceled");
@@ -307,8 +343,89 @@ namespace SpriteSheetMaker
             int percent = (int)Math.Floor(Math.Max(0.0, Math.Min(1.0, fraction)) * 100);
             TryBeginInvoke(() =>
             {
-                if (exportBusy && !closing) statusLabel.Text = Loc.T("message.exporting", label, percent);
+                if (!exportBusy || closing) return;
+                statusLabel.Text = Loc.T("message.exporting", label, percent);
+                exportBarTarget = (float)Math.Max(exportBarTarget, Math.Min(1.0, fraction));
             });
+        }
+
+        //--------------
+        // 書き出しの進捗バー（ステータスバーの上端に細く描く）
+        //--------------
+        private enum ExportBarState { Hidden, Running, Done }
+        private const int ExportBarHeight = 3;
+        private const int ExportBarDoneMilliseconds = 450;   // 終わったときに緑に光ってから消えるまで
+        private ExportBarState exportBarState;
+        private float exportBarTarget;        // 実際の進み具合（0〜1）
+        private float exportBarShown;         // 描いている長さ（目標へなめらかに近づける）
+        private readonly System.Diagnostics.Stopwatch exportBarDoneClock = new System.Diagnostics.Stopwatch();
+        private System.Windows.Forms.Timer exportBarTimer;
+
+        private void StartExportBar()
+        {
+            exportBarState = ExportBarState.Running;
+            exportBarTarget = 0;
+            exportBarShown = 0;
+            if (exportBarTimer == null)
+            {
+                exportBarTimer = new System.Windows.Forms.Timer { Interval = 15 };
+                exportBarTimer.Tick += (s, e) => StepExportBar();
+            }
+            exportBarTimer.Start();
+            InvalidateExportBar();
+        }
+
+        // 成功なら最後まで伸ばして緑に光らせ、中止・失敗ならすぐ消す。
+        private void FinishExportBar(bool succeeded)
+        {
+            if (!succeeded || !UiMotion.Enabled)
+            {
+                exportBarState = ExportBarState.Hidden;
+                if (exportBarTimer != null) exportBarTimer.Stop();
+                InvalidateExportBar();
+                return;
+            }
+            exportBarTarget = 1f;
+            exportBarState = ExportBarState.Done;
+            exportBarDoneClock.Reset();
+        }
+
+        private void StepExportBar()
+        {
+            float step = (exportBarTarget - exportBarShown) * 0.22f;
+            exportBarShown = Math.Abs(step) < 0.002f ? exportBarTarget : exportBarShown + step;
+            if (exportBarState == ExportBarState.Done)
+            {
+                if (exportBarShown >= 0.999f && !exportBarDoneClock.IsRunning) exportBarDoneClock.Start();
+                if (exportBarDoneClock.ElapsedMilliseconds >= ExportBarDoneMilliseconds)
+                {
+                    exportBarState = ExportBarState.Hidden;
+                    exportBarTimer.Stop();
+                }
+            }
+            InvalidateExportBar();
+        }
+
+        private void InvalidateExportBar()
+        {
+            if (bottomStatusStrip.IsHandleCreated) bottomStatusStrip.Invalidate(new Rectangle(0, 0, bottomStatusStrip.Width, ExportBarHeight + 1));
+        }
+
+        private void PaintExportBar(Graphics g)
+        {
+            if (exportBarState == ExportBarState.Hidden) return;
+            int width = (int)Math.Round(bottomStatusStrip.Width * Math.Max(0f, Math.Min(1f, exportBarShown)));
+            if (width <= 0) return;
+            Color color = accentColor;
+            if (exportBarState == ExportBarState.Done && exportBarDoneClock.IsRunning)
+            {
+                // 緑に光ってから薄くなって消える。
+                float t = Math.Min(1f, exportBarDoneClock.ElapsedMilliseconds / (float)ExportBarDoneMilliseconds);
+                Color green = Color.FromArgb(90, 210, 130);
+                color = t < 0.4f ? UiMotion.Mix(accentColor, green, t / 0.4f) : Color.FromArgb((int)Math.Round(255 * (1f - (t - 0.4f) / 0.6f)), green);
+            }
+            using (var brush = new SolidBrush(color))
+                g.FillRectangle(brush, 0, 0, width, ExportBarHeight);
         }
 
         private void SetExportBusy(bool busy)
@@ -318,6 +435,7 @@ namespace SpriteSheetMaker
             exportPngButton.Enabled = canExport;
             exportTgaButton.Enabled = canExport;
             exportGifButton.Enabled = canExport;
+            exportWebPButton.Enabled = canExport;
         }
 
         private void CancelExport()

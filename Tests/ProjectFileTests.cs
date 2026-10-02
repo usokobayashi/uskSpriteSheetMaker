@@ -45,6 +45,7 @@ namespace SpriteSheetMakerTests
                 NextFolderNumber = 4, Columns = 24, ScaleIndex = 2, Fps = 30, StartCell = 3, EndCell = 171,
                 ExportNumbers = true, PreviewMode = "Player", PlayerMoveSpeed = 1.5m, PlayerJump = 3.2m,
                 PlayerGravity = 2.1m, PlayerGroundOffset = -12, MirrorMissingDirections = true,
+                PlayerColliderWidth = 24, PlayerColliderHeight = 40, ShowCollider = true,
                 BackgroundPalette = 1, BlackTransparency = true, ColorBlendMode = "Multiply",
                 AdjustmentColorArgb = unchecked((int)0xFF3366CC), AdjustmentStrength = 65,
                 EffectDirectionX = -1, EffectDirectionY = 0.5m, EffectSpeed = 4.5m,
@@ -89,6 +90,8 @@ namespace SpriteSheetMakerTests
             Assert.AreEqual("Player", r.PreviewMode, "preview mode");
             Assert.AreEqual(1.5m, r.PlayerMoveSpeed, "move speed"); Assert.AreEqual(3.2m, r.PlayerJump, "jump");
             Assert.AreEqual(2.1m, r.PlayerGravity, "gravity"); Assert.AreEqual(-12m, r.PlayerGroundOffset, "ground offset");
+            Assert.AreEqual(24m, r.PlayerColliderWidth, "collider width"); Assert.AreEqual(40m, r.PlayerColliderHeight, "collider height");
+            Assert.IsTrue(r.ShowCollider, "collider shown");
             Assert.IsTrue(r.MirrorMissingDirections, "mirror"); Assert.AreEqual(1, r.BackgroundPalette, "background");
             Assert.IsTrue(r.BlackTransparency, "black transparency"); Assert.AreEqual("Multiply", r.ColorBlendMode, "blend");
             Assert.AreEqual(unchecked((int)0xFF3366CC), r.AdjustmentColorArgb, "adjust color"); Assert.AreEqual(65, r.AdjustmentStrength, "adjust strength");

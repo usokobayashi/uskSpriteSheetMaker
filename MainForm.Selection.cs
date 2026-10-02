@@ -230,7 +230,12 @@ namespace SpriteSheetMaker
         // フォルダごとに新しい行から始まり、1行に「横セル数」ぶんのセルがある（空きのセルにも番号が付く）。
         private Dictionary<ImageItem, int> ComputeCellNumbers(IList<ImageFolder> list)
         {
-            int columns = Math.Max(1, (int)columnsBox.Value);
+            return ComputeCellNumbers(list, (int)columnsBox.Value);
+        }
+
+        private static Dictionary<ImageItem, int> ComputeCellNumbers(IList<ImageFolder> list, int columns)
+        {
+            columns = Math.Max(1, columns);
             var map = new Dictionary<ImageItem, int>();
             int next = 1;
             foreach (ImageFolder folder in list)
@@ -292,8 +297,10 @@ namespace SpriteSheetMaker
             assignFilter = new AssignInputFilter(IsInsideAssignHole, IsAssignTab, TryAssignAt, EndAssignMode);
             Application.AddMessageFilter(assignFilter);
             assignOverlaySignature = "";
+            assignOverlay.SetConstantAlpha(UiMotion.Enabled ? (byte)0 : (byte)255);
             assignOverlay.Show(this);
             RepositionAssignOverlay();
+            assignOverlay.FadeTo(255, AssignFadeMilliseconds, null);   // 暗転を0.15秒で入れる
             // 状態リストをスクロールすると、行の位置に合わせて穴も動かす。
             assignTimer = new Timer { Interval = 50 };
             assignTimer.Tick += (s, e) => RepositionAssignOverlay();
@@ -307,8 +314,16 @@ namespace SpriteSheetMaker
             if (assignTimer != null) { assignTimer.Stop(); assignTimer.Dispose(); assignTimer = null; }
             if (assignFilter != null) Application.RemoveMessageFilter(assignFilter);
             assignFilter = null;
-            if (assignOverlay != null) { assignOverlay.Close(); assignOverlay.Dispose(); assignOverlay = null; }
+            if (assignOverlay != null)
+            {
+                // 入力の横取りはすぐ外し、見た目の暗転だけ0.15秒で消してから窓を閉じる。
+                AssignOverlayForm fading = assignOverlay;
+                assignOverlay = null;
+                fading.FadeTo(0, AssignFadeMilliseconds, () => { fading.Close(); fading.Dispose(); });
+            }
         }
+
+        private const int AssignFadeMilliseconds = 150;
 
         // 暗くする窓を本体の位置・大きさ・スクロール状態に合わせる（変化があるときだけ描き直す）。
         private void RepositionAssignOverlay()

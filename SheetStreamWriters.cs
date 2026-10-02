@@ -133,7 +133,8 @@ namespace SpriteSheetMaker
         }
 
         // None / Sub / Up のうち、値の偏りが小さくなる（＝圧縮しやすい）ものを選んで line に入れる。
-        private static void FilterRow(byte[] raw, byte[] previous, byte[] sub, byte[] up, byte[] line, int rowBytes)
+        // APNG（ApngWriter）もフレームごとのPNG圧縮に同じ選び方を使うため internal にしてある。
+        internal static void FilterRow(byte[] raw, byte[] previous, byte[] sub, byte[] up, byte[] line, int rowBytes)
         {
             int costNone = 0, costSub = 0, costUp = 0;
             for (int i = 0; i < rowBytes; i++)
@@ -164,7 +165,7 @@ namespace SpriteSheetMaker
             }
         }
 
-        private static void UpdateAdler(ref uint a, ref uint b, byte[] data, int length)
+        internal static void UpdateAdler(ref uint a, ref uint b, byte[] data, int length)
         {
             const uint Mod = 65521;
             int offset = 0;
@@ -207,7 +208,7 @@ namespace SpriteSheetMaker
             return crc;
         }
 
-        private static void WriteBigEndian(byte[] buffer, int offset, int value)
+        internal static void WriteBigEndian(byte[] buffer, int offset, int value)
         {
             buffer[offset] = (byte)(value >> 24);
             buffer[offset + 1] = (byte)(value >> 16);
@@ -215,7 +216,7 @@ namespace SpriteSheetMaker
             buffer[offset + 3] = (byte)value;
         }
 
-        private static void WriteChunk(Stream stream, string type, byte[] data, int length)
+        internal static void WriteChunk(Stream stream, string type, byte[] data, int length)
         {
             var head = new byte[8];
             WriteBigEndian(head, 0, length);

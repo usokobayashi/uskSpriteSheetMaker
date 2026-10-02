@@ -186,7 +186,7 @@ namespace SpriteSheetMaker
 
             var ordered = new List<Control>
             {
-                basicSettingsHeader, unifiedFpsGroup, backgroundPaletteGroup, languageGroup, axisNumbersCheckBox,
+                basicSettingsHeader, unifiedFpsGroup, backgroundPaletteGroup, languageGroup, axisNumbersCheckBox, updateCheckBox,
                 processingSettingsHeader, blackTransparencyCheckBox, colorAdjustmentGroup
             };
             if (statusHeader != null) ordered.Add(statusHeader);
@@ -194,7 +194,7 @@ namespace SpriteSheetMaker
 
             var breakAfter = new HashSet<Control>
             {
-                basicSettingsHeader, backgroundPaletteGroup, languageGroup, axisNumbersCheckBox,
+                basicSettingsHeader, backgroundPaletteGroup, languageGroup, axisNumbersCheckBox, updateCheckBox,
                 processingSettingsHeader, colorAdjustmentGroup
             };
             if (statusHeader != null) breakAfter.Add(statusHeader);
@@ -202,6 +202,8 @@ namespace SpriteSheetMaker
             {
                 breakAfter.Add(mirrorMissingDirectionsCheckBox);
                 breakAfter.Add(terrainCheckBox);
+                breakAfter.Add(playerGroundOffsetGroup);
+                breakAfter.Add(playerColliderVisibleCheckBox);
             }
 
             row.SuspendLayout();

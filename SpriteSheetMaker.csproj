@@ -56,6 +56,8 @@
     <Compile Include="UndoManager.cs" />
     <Compile Include="TgaWriter.cs" />
     <Compile Include="GifWriter.cs" />
+    <Compile Include="ApngWriter.cs" />
+    <Compile Include="WebPWriter.cs" />
     <Compile Include="AppInfo.cs" />
     <Compile Include="SheetStreamWriters.cs" />
     <Compile Include="MainForm.Export.cs" />
@@ -70,6 +72,10 @@
     <Compile Include="MainForm.Project.cs" />
     <Compile Include="MainForm.Selection.cs" />
     <Compile Include="MainForm.Memo.cs" />
+    <Compile Include="MainForm.Update.cs" />
+    <Compile Include="UpdateChecker.cs" />
+    <Compile Include="PageTransition.cs" />
+    <Compile Include="UiMotion.cs" />
     <Compile Include="SheetMemo.cs" />
     <Compile Include="AssignOverlay.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
