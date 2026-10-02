@@ -244,25 +244,25 @@ namespace SpriteSheetMaker
             {
                 if (format == ImageOutputFormat.Png)
                 {
-                    dialog.Filter = "PNG Image (*.png)|*.png";
+                    dialog.Filter = Loc.T("filter.formatImage", "PNG") + " (*.png)|*.png";
                     dialog.DefaultExt = "png";
                     dialog.FileName = "spritesheet.png";
                 }
                 else if (format == ImageOutputFormat.Tga)
                 {
-                    dialog.Filter = "TGA Image (*.tga)|*.tga";
+                    dialog.Filter = Loc.T("filter.formatImage", "TGA") + " (*.tga)|*.tga";
                     dialog.DefaultExt = "tga";
                     dialog.FileName = "spritesheet.tga";
                 }
                 else if (format == ImageOutputFormat.Gif)
                 {
-                    dialog.Filter = "GIF Image (*.gif)|*.gif";
+                    dialog.Filter = Loc.T("filter.formatImage", "GIF") + " (*.gif)|*.gif";
                     dialog.DefaultExt = "gif";
                     dialog.FileName = "animation.gif";
                 }
                 else
                 {
-                    dialog.Filter = "Animated WebP (*.webp)|*.webp";
+                    dialog.Filter = Loc.T("filter.animatedWebP") + " (*.webp)|*.webp";
                     dialog.DefaultExt = "webp";
                     dialog.FileName = "animation.webp";
                 }

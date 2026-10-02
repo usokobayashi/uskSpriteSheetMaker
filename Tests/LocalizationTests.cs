@@ -13,6 +13,7 @@ namespace SpriteSheetMakerTests
             yield return new TestCase { Name = "Loc_Parse_HandlesCommentsEscapesAndFirstDuplicate", Action = Loc_Parse_HandlesCommentsEscapesAndFirstDuplicate };
             yield return new TestCase { Name = "Loc_FallsBackToJapaneseThenKey", Action = Loc_FallsBackToJapaneseThenKey };
             yield return new TestCase { Name = "Loc_LanguageFiles_HaveNoDuplicateOrOrphanKeys", Action = Loc_LanguageFiles_HaveNoDuplicateOrOrphanKeys };
+            yield return new TestCase { Name = "Loc_LanguageFiles_AreCompleteAndFreeOfJapanese", Action = Loc_LanguageFiles_AreCompleteAndFreeOfJapanese };
             yield return new TestCase { Name = "Loc_Translations_KeepPlaceholders", Action = Loc_Translations_KeepPlaceholders };
         }
 
@@ -56,6 +57,26 @@ namespace SpriteSheetMakerTests
             }
             foreach (KeyValuePair<string, string> pair in ja)
                 Assert.IsTrue(pair.Value.Length > 0, "ja.lang value is empty: " + pair.Key);
+        }
+
+        // どの言語にも日本語の全キーがあり（未訳で日本語が出ることがない）、英・中・インドネシア語の値に
+        // かな・日本語の中黒「・」が残っていない（直訳のまま日本語の記号が混ざるのを防ぐ）。
+        private static void Loc_LanguageFiles_AreCompleteAndFreeOfJapanese()
+        {
+            Loc.ResetForTests();
+            Dictionary<string, string> ja = Loc.Parse(Loc.GetResourceText(UiLanguage.Japanese));
+            foreach (LanguageInfo info in Loc.All)
+            {
+                if (info.Language == UiLanguage.Japanese) continue;
+                Dictionary<string, string> table = Loc.Parse(Loc.GetResourceText(info.Language));
+                foreach (KeyValuePair<string, string> pair in ja)
+                {
+                    string value;
+                    Assert.IsTrue(table.TryGetValue(pair.Key, out value) && value.Length > 0, info.Code + ".lang is missing " + pair.Key);
+                    foreach (char c in value)
+                        Assert.IsFalse(c >= '぀' && c <= 'ヿ', info.Code + ".lang has Japanese kana or ・ in " + pair.Key + ": " + value);
+                }
+            }
         }
 
         private static void Loc_Translations_KeepPlaceholders()

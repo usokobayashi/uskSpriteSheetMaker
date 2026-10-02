@@ -4140,7 +4140,7 @@ namespace SpriteSheetMaker
         {
             using (var dialog = new OpenFileDialog())
             {
-                dialog.Filter = "Image Files (*.png;*.jpg;*.jpeg;*.bmp)|*.png;*.jpg;*.jpeg;*.bmp";
+                dialog.Filter = Loc.T("filter.images") + " (*.png;*.jpg;*.jpeg;*.bmp)|*.png;*.jpg;*.jpeg;*.bmp";
                 dialog.Multiselect = true;
 
                 if (dialog.ShowDialog(this) != DialogResult.OK)
