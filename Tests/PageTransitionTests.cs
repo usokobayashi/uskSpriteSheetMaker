@@ -22,6 +22,7 @@ namespace SpriteSheetMakerTests
             yield return new TestCase { Name = "PageTransition_EaseGoesFromZeroToOneAndSlowsDown", Action = EaseGoesFromZeroToOneAndSlowsDown };
             yield return new TestCase { Name = "PageTransition_OverlayIsRemovedAfterSwitching", Action = OverlayIsRemovedAfterSwitching };
             yield return new TestCase { Name = "FitAnimation_ReturnsToFitInAboutPointTwoSeconds", Action = FitAnimation_ReturnsToFitInAboutPointTwoSeconds };
+            yield return new TestCase { Name = "TabBar_IndicatorSlidesToTheClickedTab", Action = TabBar_IndicatorSlidesToTheClickedTab };
         }
 
         private static void EaseGoesFromZeroToOneAndSlowsDown()
@@ -97,6 +98,45 @@ namespace SpriteSheetMakerTests
                 typeof(PreviewCanvas).GetMethod("OnMouseWheel", Flags).Invoke(canvas, new object[] { new MouseEventArgs(MouseButtons.None, 0, 50, 50, 120) });
                 Pump(30);
                 Assert.IsFalse(canvas.IsFitMode, "a wheel turn during the motion stops it and keeps the user's zoom");
+            }
+        }
+
+        // タブの選択表示は台と同じ描画で滑り、最後はクリックしたタブの範囲にぴったり重なる。
+        private static void TabBar_IndicatorSlidesToTheClickedTab()
+        {
+            using (var form = new Form { StartPosition = FormStartPosition.Manual, Location = new Point(-4000, -4000), Size = new Size(500, 200), ShowInTaskbar = false })
+            {
+                var bar = new SegmentedTabBar(3) { Bounds = new Rectangle(12, 10, 361, 40) };
+                form.Controls.Add(bar);
+                form.Show();
+                Pump(2);
+                Assert.AreEqual(0, bar.Controls.Count, "draws everything itself (no child buttons to fall out of step)");
+                Rectangle first = bar.GetTabBounds(0), second = bar.GetTabBounds(1), last = bar.GetTabBounds(2);
+                Assert.AreEqual(first.Width, second.Width, "equal tab widths");
+                Assert.AreEqual(bar.ClientSize.Width - 4, last.Right, "last tab reaches the right padding");
+                Assert.AreEqual((RectangleF)first, bar.IndicatorBounds, "starts on the first tab");
+
+                int clicked = -1;
+                bar.TabClicked += i => clicked = i;
+                Point inside = new Point(last.X + last.Width / 2, last.Y + last.Height / 2);
+                typeof(SegmentedTabBar).GetMethod("OnMouseDown", Flags).Invoke(bar, new object[] { new MouseEventArgs(MouseButtons.Left, 1, inside.X, inside.Y, 0) });
+                typeof(SegmentedTabBar).GetMethod("OnMouseUp", Flags).Invoke(bar, new object[] { new MouseEventArgs(MouseButtons.Left, 1, inside.X, inside.Y, 0) });
+                Assert.AreEqual(2, clicked, "click on the third tab");
+
+                bar.SelectTab(2, true);
+                Assert.AreEqual(2, bar.SelectedIndex, "selected right away");
+                if (SystemInformation.UIEffectsEnabled)
+                {
+                    Assert.IsTrue(bar.IsAnimating, "slides");
+                    Assert.IsTrue(bar.IndicatorBounds.X < last.X, "has not jumped to the end");
+                }
+                var wait = System.Diagnostics.Stopwatch.StartNew();
+                while (bar.IsAnimating && wait.ElapsedMilliseconds < 1500) Pump(1);
+                Assert.IsFalse(bar.IsAnimating, "the slide ends");
+                Assert.AreEqual((RectangleF)last, bar.IndicatorBounds, "ends exactly on the tab");
+
+                bar.Width = 420;
+                Assert.AreEqual((RectangleF)bar.GetTabBounds(2), bar.IndicatorBounds, "follows a resize");
             }
         }
 

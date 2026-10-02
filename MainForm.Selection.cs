@@ -383,7 +383,7 @@ namespace SpriteSheetMaker
         private List<Rectangle> GetAssignPassRects()
         {
             var rects = new List<Rectangle>();
-            rects.Add(tabSegmentBackground.RectangleToScreen(tabSegmentBackground.ClientRectangle));
+            rects.Add(workspaceTabBar.RectangleToScreen(workspaceTabBar.ClientRectangle));
             Control area = GetAssignArea();
             if (area != null) rects.Add(area.RectangleToScreen(area.ClientRectangle));
             return rects;
@@ -404,7 +404,7 @@ namespace SpriteSheetMaker
 
         private bool IsAssignTab(Point screenPoint)
         {
-            return tabSegmentBackground.RectangleToScreen(tabSegmentBackground.ClientRectangle).Contains(screenPoint);
+            return workspaceTabBar.RectangleToScreen(workspaceTabBar.ClientRectangle).Contains(screenPoint);
         }
 
         // 状態の行（名前〜キー割り当てボタンの範囲）の左クリックで、その状態の開始〜終了へ選択範囲を設定する。

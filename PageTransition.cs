@@ -8,6 +8,7 @@
 using System;
 using System.Diagnostics;
 using System.Drawing;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace SpriteSheetMaker
@@ -24,9 +25,16 @@ namespace SpriteSheetMaker
         private readonly Bitmap to;
         private readonly PageTransitionKind kind;
         private readonly int durationMs;
-        private readonly Stopwatch clock = Stopwatch.StartNew();
+        // 最初に画面へ出た時点から数える（切り替えの重い処理で表示が遅れても、動きが省かれないように）。
+        private readonly Stopwatch clock = new Stopwatch();
+        private readonly Stopwatch sinceCreated = Stopwatch.StartNew();   // 一度も描かれない場合の打ち切り用
         private readonly Timer timer = new Timer { Interval = 15 };
         private bool finished;
+
+        private const int WM_SETREDRAW = 0x000B;
+        private const uint RDW_INVALIDATE = 0x0001, RDW_ERASE = 0x0004, RDW_ALLCHILDREN = 0x0080, RDW_UPDATENOW = 0x0100;
+        [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+        [DllImport("user32.dll")] private static extern bool RedrawWindow(IntPtr hWnd, IntPtr rect, IntPtr region, uint flags);
 
         public PageTransitionOverlay(Bitmap from, Bitmap to, PageTransitionKind kind, int durationMs)
         {
@@ -39,7 +47,8 @@ namespace SpriteSheetMaker
             TabStop = false;
             timer.Tick += (s, e) =>
             {
-                if (clock.ElapsedMilliseconds >= this.durationMs) Finish();
+                if ((clock.IsRunning && clock.ElapsedMilliseconds >= this.durationMs) ||
+                    (!clock.IsRunning && sinceCreated.ElapsedMilliseconds >= this.durationMs * 3)) Finish();
                 else Invalidate();
             };
             timer.Start();
@@ -60,12 +69,32 @@ namespace SpriteSheetMaker
             finished = true;
             timer.Stop();
             Control parent = Parent;
-            if (parent != null) parent.Controls.Remove(this);
+            if (parent != null)
+            {
+                // 覆いを外した直後に下のコントロールが1つずつ描き直されて見えないよう、
+                // 描画を止めて外し、全部を一度に描き直す。
+                bool freeze = parent.IsHandleCreated && parent.Visible;
+                if (freeze) SendMessage(parent.Handle, WM_SETREDRAW, IntPtr.Zero, IntPtr.Zero);
+                try
+                {
+                    parent.Controls.Remove(this);
+                }
+                finally
+                {
+                    if (freeze)
+                    {
+                        SendMessage(parent.Handle, WM_SETREDRAW, new IntPtr(1), IntPtr.Zero);
+                        RedrawWindow(parent.Handle, IntPtr.Zero, IntPtr.Zero,
+                            RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
+                    }
+                }
+            }
             Dispose();
         }
 
         protected override void OnPaint(PaintEventArgs e)
         {
+            if (!clock.IsRunning) clock.Start();
             float progress = Ease(clock.ElapsedMilliseconds / (float)durationMs);
             Graphics g = e.Graphics;
             g.Clear(BackColor);

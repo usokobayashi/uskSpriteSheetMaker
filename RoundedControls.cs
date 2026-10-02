@@ -123,6 +123,243 @@ namespace SpriteSheetMaker
         }
     }
 
+    // 左ペイン上部のタブ（フォルダ・状態遷移・設定）。台・選択中の色付き角丸・ホバー・文字を
+    // ひとつの OnPaint でまとめて描く。ボタンを子に並べると台とボタンが別々の時点で描かれ、
+    // 滑っている選択表示が境目でずれたりちらついたりするため、子コントロールを持たない。
+    internal sealed class SegmentedTabBar : Control
+    {
+        private const int Pad = 4;
+        private const int Gap = 4;
+        private readonly string[] texts;
+        private int selectedIndex;
+        private int hoverIndex = -1;
+        private int pressedIndex = -1;
+        private RectangleF indicatorRect;
+        private RectangleF indicatorFrom;
+        private readonly System.Diagnostics.Stopwatch clock = new System.Diagnostics.Stopwatch();
+        private readonly Timer timer = new Timer { Interval = 15 };
+
+        public int CornerRadius { get; set; } = 8;
+        public int IndicatorRadius { get; set; } = 4;
+        public int AnimationMilliseconds { get; set; } = 300;
+        public Color IndicatorColor { get; set; } = Color.SlateBlue;
+        public Color HoverColor { get; set; } = Color.Empty;
+        public Color SelectedForeColor { get; set; } = Color.White;
+        public event Action<int> TabClicked;
+
+        public SegmentedTabBar(int count)
+        {
+            texts = new string[Math.Max(1, count)];
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
+                ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.Opaque, true);
+            SetStyle(ControlStyles.Selectable, false);
+            TabStop = false;
+            Cursor = Cursors.Hand;
+            timer.Tick += (s, e) => StepAnimation();
+        }
+
+        public int TabCount { get { return texts.Length; } }
+        public int SelectedIndex { get { return selectedIndex; } }
+        public bool IsAnimating { get { return timer.Enabled; } }
+        // 今描いている選択表示の位置（テスト・確認用）。
+        public RectangleF IndicatorBounds { get { return indicatorRect; } }
+
+        public void SetTabText(int index, string text)
+        {
+            texts[index] = text ?? "";
+            AccessibilityNotifyClients(AccessibleEvents.NameChange, index);
+            Invalidate();
+        }
+
+        // 各タブの範囲。幅は等分し、割り切れない分は最後のタブへ足す。
+        public Rectangle GetTabBounds(int index)
+        {
+            int count = texts.Length;
+            int height = Math.Max(1, ClientSize.Height - Pad * 2);
+            int colWidth = Math.Max(20, (ClientSize.Width - Pad * 2 - Gap * (count - 1)) / count);
+            int x = Pad + index * (colWidth + Gap);
+            int width = index == count - 1 ? Math.Max(colWidth, ClientSize.Width - Pad - x) : colWidth;
+            return new Rectangle(x, Pad, width, height);
+        }
+
+        // 選択を変える。animate のとき、今の位置から新しいタブへ滑らせる（時間はここから数える）。
+        public void SelectTab(int index, bool animate)
+        {
+            index = Math.Max(0, Math.Min(texts.Length - 1, index));
+            if (index == selectedIndex && !timer.Enabled && !indicatorRect.IsEmpty) return;
+            selectedIndex = index;
+            if (!animate || !UiMotion.Enabled || indicatorRect.IsEmpty || !IsHandleCreated || !Visible)
+            {
+                timer.Stop();
+                indicatorRect = GetTabBounds(index);
+                Invalidate();
+                return;
+            }
+            indicatorFrom = indicatorRect;
+            clock.Restart();
+            timer.Start();
+            StepAnimation();
+        }
+
+        private void StepAnimation()
+        {
+            RectangleF goal = GetTabBounds(selectedIndex);
+            float t = PageTransitionOverlay.Ease(clock.ElapsedMilliseconds / (float)Math.Max(1, AnimationMilliseconds));
+            if (clock.ElapsedMilliseconds >= AnimationMilliseconds)
+            {
+                timer.Stop();
+                indicatorRect = goal;
+            }
+            else
+            {
+                indicatorRect = new RectangleF(
+                    indicatorFrom.X + (goal.X - indicatorFrom.X) * t, goal.Y,
+                    indicatorFrom.Width + (goal.Width - indicatorFrom.Width) * t, goal.Height);
+            }
+            // 次のタイマーを待たずにすぐ描く（ほかの描画に後回しにされると動きが飛ぶ）。
+            Invalidate();
+            Update();
+        }
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            if (!timer.Enabled) indicatorRect = GetTabBounds(selectedIndex);
+            Invalidate();
+        }
+
+        private int HitTest(Point point)
+        {
+            for (int i = 0; i < texts.Length; i++)
+                if (GetTabBounds(i).Contains(point)) return i;
+            return -1;
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            base.OnMouseMove(e);
+            int hit = HitTest(e.Location);
+            if (hit != hoverIndex) { hoverIndex = hit; Invalidate(); }
+        }
+
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            base.OnMouseLeave(e);
+            hoverIndex = -1;
+            pressedIndex = -1;
+            Invalidate();
+        }
+
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            base.OnMouseDown(e);
+            if (e.Button == MouseButtons.Left) pressedIndex = HitTest(e.Location);
+        }
+
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            base.OnMouseUp(e);
+            int pressed = pressedIndex;
+            pressedIndex = -1;
+            if (e.Button != MouseButtons.Left || pressed < 0 || HitTest(e.Location) != pressed) return;
+            Action<int> handler = TabClicked;
+            if (handler != null) handler(pressed);
+        }
+
+        protected override void OnPaintBackground(PaintEventArgs e) { }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            RoundedPaint.Draw(g, ClientSize, BackColor, Color.Empty, CornerRadius, RoundedPaint.ResolveBackdrop(Parent));
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            if (HoverColor != Color.Empty && hoverIndex >= 0 && hoverIndex != selectedIndex && Enabled)
+                using (var brush = new SolidBrush(HoverColor))
+                using (GraphicsPath path = CreateRoundedPath(GetTabBounds(hoverIndex), IndicatorRadius))
+                    g.FillPath(brush, path);
+            if (indicatorRect.Width > 1)
+                using (var brush = new SolidBrush(IndicatorColor))
+                using (GraphicsPath path = CreateRoundedPath(indicatorRect, IndicatorRadius))
+                    g.FillPath(brush, path);
+            for (int i = 0; i < texts.Length; i++)
+            {
+                if (string.IsNullOrEmpty(texts[i])) continue;
+                // 文字の色は選択表示が重なっている割合で白へ寄せる（滑っている途中で先に色が変わらないように）。
+                Rectangle tab = GetTabBounds(i);
+                float overlap = Math.Max(0f, Math.Min(tab.Right, indicatorRect.Right) - Math.Max(tab.Left, indicatorRect.Left)) / Math.Max(1, tab.Width);
+                TextRenderer.DrawText(g, texts[i], Font, tab, Blend(ForeColor, SelectedForeColor, overlap),
+                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix |
+                    TextFormatFlags.EndEllipsis);
+            }
+        }
+
+        private static Color Blend(Color from, Color to, float t)
+        {
+            t = Math.Max(0f, Math.Min(1f, t));
+            return Color.FromArgb(
+                (int)Math.Round(from.R + (to.R - from.R) * t),
+                (int)Math.Round(from.G + (to.G - from.G) * t),
+                (int)Math.Round(from.B + (to.B - from.B) * t));
+        }
+
+        // 小数の位置のまま角丸を作る（整数へ丸めると、滑らせたときに1pxずつ跳ねて見える）。
+        private static GraphicsPath CreateRoundedPath(RectangleF rect, float radius)
+        {
+            var bounds = new RectangleF(rect.X, rect.Y, rect.Width - 1, rect.Height - 1);
+            float r = Math.Max(0.5f, Math.Min(radius, Math.Min(bounds.Width, bounds.Height) / 2f));
+            float d = r * 2f;
+            var path = new GraphicsPath();
+            path.AddArc(bounds.X, bounds.Y, d, d, 180, 90);
+            path.AddArc(bounds.Right - d, bounds.Y, d, d, 270, 90);
+            path.AddArc(bounds.Right - d, bounds.Bottom - d, d, d, 0, 90);
+            path.AddArc(bounds.X, bounds.Bottom - d, d, d, 90, 90);
+            path.CloseFigure();
+            return path;
+        }
+
+        protected override AccessibleObject CreateAccessibilityInstance()
+        {
+            return new TabBarAccessible(this);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) timer.Dispose();
+            base.Dispose(disposing);
+        }
+
+        // 読み上げソフト向けに、各タブをページタブとして見せる。
+        private sealed class TabBarAccessible : ControlAccessibleObject
+        {
+            private readonly SegmentedTabBar bar;
+            public TabBarAccessible(SegmentedTabBar bar) : base(bar) { this.bar = bar; }
+            public override AccessibleRole Role { get { return AccessibleRole.PageTabList; } }
+            public override int GetChildCount() { return bar.texts.Length; }
+            public override AccessibleObject GetChild(int index) { return new TabAccessible(bar, index); }
+        }
+
+        private sealed class TabAccessible : AccessibleObject
+        {
+            private readonly SegmentedTabBar bar;
+            private readonly int index;
+            public TabAccessible(SegmentedTabBar bar, int index) { this.bar = bar; this.index = index; }
+            public override string Name { get { return bar.texts[index]; } }
+            public override AccessibleRole Role { get { return AccessibleRole.PageTab; } }
+            public override AccessibleObject Parent { get { return bar.AccessibilityObject; } }
+            public override Rectangle Bounds { get { return bar.RectangleToScreen(bar.GetTabBounds(index)); } }
+            public override AccessibleStates State
+            {
+                get { return index == bar.selectedIndex ? AccessibleStates.Selected | AccessibleStates.Selectable : AccessibleStates.Selectable; }
+            }
+            public override string DefaultAction { get { return "Select"; } }
+            public override void DoDefaultAction()
+            {
+                Action<int> handler = bar.TabClicked;
+                if (handler != null) handler(index);
+            }
+        }
+    }
+
     internal sealed class RoundedButton : Button
     {
         private bool hover;
@@ -306,14 +543,21 @@ namespace SpriteSheetMaker
             }
         }
 
+        [DllImport("gdi32.dll")]
+        private static extern IntPtr AddFontMemResourceEx(IntPtr font, uint length, IntPtr reserved, ref uint fontCount);
+
         // PrivateFontCollection.AddMemoryFontは、渡したメモリの内容を直接参照し続けるため、
         // 呼び出し側でアンマネージメモリへコピーしてから渡し、以後は（アプリ終了まで）解放しない。
+        // AddMemoryFont は GDI+（Graphics.DrawString）にしか登録されない。ラベル・ボタン・TextRenderer は
+        // GDI で文字を描くので、GDI にも同じフォントを登録する（しないと GDI は別の書体で代わりに描く）。
         private static void AddMemoryFont(PrivateFontCollection collection, byte[] data)
         {
             IntPtr buffer = Marshal.AllocCoTaskMem(data.Length);
             Marshal.Copy(data, 0, buffer, data.Length);
             collection.AddMemoryFont(buffer, data.Length);
             pinnedFontMemory.Add(buffer);
+            uint added = 0;
+            AddFontMemResourceEx(buffer, (uint)data.Length, IntPtr.Zero, ref added);   // プロセス内だけで有効
         }
 
         public static void SetLanguage(UiLanguage language)

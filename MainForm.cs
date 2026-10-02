@@ -56,7 +56,7 @@ namespace SpriteSheetMaker
         private ImageItem imageSelectionAnchor;
         private bool restoringState;
         // 構築時にResize/HandleCreated駆動で自前配置するパネル群
-        // （emptyDropZone、tabSegmentBackground、fileActions、animInfoLabelなど）の
+        // （emptyDropZone、workspaceTabBar、fileActions、animInfoLabelなど）の
         // 再配置クロージャ。DPI拡大率が96以外の環境では、AutoScaleMode.Dpiによる
         // コントロールのスケーリングと、これらクロージャの初回実行タイミングが
         // ズレることがあり、その場合だけ数ピクセルの表示崩れが残ることがある。
@@ -105,6 +105,7 @@ namespace SpriteSheetMaker
         private Control playerGroundOffsetGroup;
         private Control playerColliderWidthHost, playerColliderHeightHost;
         private Label playerColliderWidthLabel, playerColliderHeightLabel;
+        private FlowLayoutPanel playerColliderSizeGroup;
         private readonly RoundedCheckBox mirrorMissingDirectionsCheckBox = new RoundedCheckBox();
         private readonly ComboBox backgroundPaletteComboBox = new ComboBox();
         private readonly RoundedCheckBox blackTransparencyCheckBox = new RoundedCheckBox();
@@ -124,10 +125,8 @@ namespace SpriteSheetMaker
         private readonly Button standardPreviewTabButton = new Button();
         private readonly Button playerPreviewTabButton = new Button();
         private readonly Button effectPreviewTabButton = new Button();
-        private readonly RoundedButton parametersTabButton = new RoundedButton();
-        private readonly RoundedButton previewWorkspaceTabButton = new RoundedButton();
-        private readonly RoundedButton transitionsWorkspaceTabButton = new RoundedButton();
-        private readonly RoundedPanel tabSegmentBackground = new RoundedPanel();
+        // フォルダ・状態遷移・設定のタブ（並びは PreviewWorkspacePage と同じ）。
+        private readonly SegmentedTabBar workspaceTabBar = new SegmentedTabBar(3);
         private readonly RoundedCheckBox gridNumberCheckBox = new RoundedCheckBox();
 
         private readonly Label exportLabel = new Label();
@@ -926,36 +925,30 @@ namespace SpriteSheetMaker
                 Height = 52,
                 BackColor = darkPanel
             };
-            tabSegmentBackground.BackColor = workspaceBack;
-            tabSegmentBackground.CornerRadius = RadiusLg;
-            tabSegmentBackground.Paint += (s, e) => PaintTabIndicator(e.Graphics);
-            ConfigureWorkspaceTabButton(previewWorkspaceTabButton, "tab.folder", PreviewWorkspacePage.Preview);
-            ConfigureWorkspaceTabButton(transitionsWorkspaceTabButton, "tab.transitions", PreviewWorkspacePage.StateTransitions);
-            ConfigureWorkspaceTabButton(parametersTabButton, "tab.settings", PreviewWorkspacePage.Parameters);
-            tabSegmentBackground.Controls.Add(previewWorkspaceTabButton);
-            tabSegmentBackground.Controls.Add(transitionsWorkspaceTabButton);
-            tabSegmentBackground.Controls.Add(parametersTabButton);
-            leftWorkspaceTabs.Controls.Add(tabSegmentBackground);
-            // 3タブを常に等幅のセグメントとして配置し直す。左ペイン幅はタブに
-            // よって変わる（320/440/420px）ため、固定座標ではなくResize時に
-            // 再計算する。
+            // 台・選択中の色付き角丸・文字はタブ自身がまとめて描く（ずれ・ちらつき防止）。
+            workspaceTabBar.BackColor = workspaceBack;
+            workspaceTabBar.CornerRadius = RadiusLg;
+            workspaceTabBar.IndicatorRadius = RadiusSm;
+            workspaceTabBar.IndicatorColor = accentColor;
+            workspaceTabBar.HoverColor = panelElevated;
+            workspaceTabBar.ForeColor = mutedText;
+            workspaceTabBar.SelectedForeColor = Color.White;
+            workspaceTabBar.Font = UiFont.Create(9.5f, FontStyle.Bold, GraphicsUnit.Point);
+            BindAction(() =>
+            {
+                workspaceTabBar.SetTabText((int)PreviewWorkspacePage.Preview, Loc.T("tab.folder"));
+                workspaceTabBar.SetTabText((int)PreviewWorkspacePage.StateTransitions, Loc.T("tab.transitions"));
+                workspaceTabBar.SetTabText((int)PreviewWorkspacePage.Parameters, Loc.T("tab.settings"));
+            });
+            workspaceTabBar.TabClicked += index => SetPreviewWorkspacePage((PreviewWorkspacePage)index);
+            leftWorkspaceTabs.Controls.Add(workspaceTabBar);
+            // タブの台は左ペインの幅いっぱい（左右12px空け）。各タブの幅は台の中で等分する。
             Action layoutTabSegment = () =>
             {
-                if (tabSegmentBackground.IsDisposed || leftWorkspaceTabs.Width <= 0) return;
+                if (workspaceTabBar.IsDisposed || leftWorkspaceTabs.Width <= 0) return;
                 const int outerMargin = 12;
-                const int pad = 4;
-                const int gap = 4;
                 int totalWidth = Math.Max(60, leftWorkspaceTabs.Width - outerMargin * 2);
-                tabSegmentBackground.SetBounds(outerMargin, 10, totalWidth, 40);
-                int colWidth = Math.Max(20, (totalWidth - pad * 2 - gap * 2) / 3);
-                int x = pad;
-                previewWorkspaceTabButton.SetBounds(x, pad, colWidth, 32);
-                x += colWidth + gap;
-                transitionsWorkspaceTabButton.SetBounds(x, pad, colWidth, 32);
-                x += colWidth + gap;
-                int lastWidth = Math.Max(colWidth, totalWidth - pad - x);
-                parametersTabButton.SetBounds(x, pad, lastWidth, 32);
-                PlaceTabIndicator();
+                workspaceTabBar.SetBounds(outerMargin, 10, totalWidth, 40);
             };
             leftWorkspaceTabs.Resize += (s, e) => layoutTabSegment();
             lateLayoutActions.Add(layoutTabSegment);
@@ -1353,18 +1346,6 @@ namespace SpriteSheetMaker
             button.Click += (s, e) => SetPreviewTargetMode(mode);
         }
 
-        private void ConfigureWorkspaceTabButton(RoundedButton button, string textKey, PreviewWorkspacePage page)
-        {
-            button.CornerRadius = RadiusSm;
-            BindText(button, textKey);
-            button.Font = UiFont.Create(9.5f, FontStyle.Bold, GraphicsUnit.Point);
-            button.FlatStyle = FlatStyle.Flat;
-            button.FlatAppearance.BorderSize = 0;
-            button.ForeColor = lightText;
-            button.Cursor = Cursors.Hand;
-            button.Click += (s, e) => SetPreviewWorkspacePage(page);
-        }
-
         private void ConfigurePreviewModeEnum()
         {
             previewModeEnumComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
@@ -1539,7 +1520,7 @@ namespace SpriteSheetMaker
                 CommitUndoableChange();
             };
             characterParameterRow.Controls.Add(playerColliderVisibleCheckBox);
-            var colliderSizeGroup = new FlowLayoutPanel
+            var colliderSizeGroup = playerColliderSizeGroup = new FlowLayoutPanel
             {
                 AutoSize = true,
                 AutoSizeMode = AutoSizeMode.GrowAndShrink,
@@ -1955,14 +1936,19 @@ namespace SpriteSheetMaker
                 BackColor = Color.FromArgb(27, 36, 43),
                 Tag = "state-transition-row"
             };
+            Font nameFont = UiFont.Create(9.0f, FontStyle.Bold, GraphicsUnit.Point);
+            // 高さは1行ぶん以上にする。省略記号つきのラベルは、高さに収まらない行を描かないため、
+            // 表示倍率が高い環境（125%など）で24px固定だと状態名が丸ごと消えていた。
+            int nameHeight = Math.Max(24, TextRenderer.MeasureText("Ag", nameFont).Height + 2);
             var name = new Label
             {
                 Text = text,
                 AutoEllipsis = true,
+                TextAlign = ContentAlignment.MiddleLeft,
                 Location = new Point(8 + indent, 17),
-                Size = new Size(Math.Max(60, 82 + transitionColumnShift - indent), 24),
+                Size = new Size(Math.Max(60, 82 + transitionColumnShift - indent), nameHeight),
                 ForeColor = lightText,
-                Font = UiFont.Create(9.0f, FontStyle.Bold, GraphicsUnit.Point)
+                Font = nameFont
             };
             var enabled = new RoundedCheckBox
             {
@@ -1985,6 +1971,10 @@ namespace SpriteSheetMaker
             startHost.Margin = endHost.Margin = Padding.Empty;
             row.Controls.Add(name);
             row.Controls.Add(enabled);
+            // 「使用」の文字と縦の中心をそろえる（チェックボックスの高さは表示時の自動サイズで決まる）。
+            EventHandler centerName = (s, e) => name.Top = Math.Max(0, enabled.Top + (enabled.Height - name.Height) / 2);
+            enabled.SizeChanged += centerName;
+            centerName(null, EventArgs.Empty);
             row.Controls.Add(startHost);
             row.Controls.Add(endHost);
             PreviewAction? action = GetStatePreviewAction(state);
@@ -2401,7 +2391,8 @@ namespace SpriteSheetMaker
             if (before != null)
                 StartLeftWorkspaceTransition(before, (int)page > (int)previousPage
                     ? PageTransitionKind.SlideFromRight : PageTransitionKind.SlideFromLeft);
-            AnimateTabIndicator(page);
+            // ページの切り替え（重い処理）が終わってから時間を数え始め、ページの横移動と同時に滑らせる。
+            workspaceTabBar.SelectTab((int)page, before != null);
         }
 
         private const int PageSlideMilliseconds = 300;
@@ -2493,9 +2484,6 @@ namespace SpriteSheetMaker
                 previewModeEnumHost.BackColor = Color.FromArgb(38, 46, 53);
                 previewModeEnumHost.Invalidate();
             }
-            StylePreviewTab(previewWorkspaceTabButton, previewPage);
-            StylePreviewTab(transitionsWorkspaceTabButton, transitionsPage);
-            StylePreviewTab(parametersTabButton, parametersPage);
             AdjustSimulationSettingsHeight();
         }
 
@@ -2529,88 +2517,9 @@ namespace SpriteSheetMaker
             ApplyPreviewSplitOnly();
         }
 
-        // タブのボタンは背景を透明にし、選択中の色付きの角丸は台（tabSegmentBackground）が描く。
-        // そうすることで、選択を変えたときに色付きの部分が隣のタブまで滑って動ける。
-        private void StylePreviewTab(Button button, bool selected)
-        {
-            button.BackColor = Color.Transparent;
-            button.ForeColor = selected ? Color.White : mutedText;
-            var rounded = button as RoundedButton;
-            if (rounded != null) rounded.TransparentHoverColor = selected ? Color.Empty : panelElevated;
-            button.Invalidate();
-        }
-
         private static int PreviewModeOrder(PreviewTargetMode mode)
         {
             return mode == PreviewTargetMode.Effect ? 1 : mode == PreviewTargetMode.Player ? 2 : 0;
-        }
-
-        //--------------
-        // タブの選択表示（滑って動く色付きの角丸）
-        //--------------
-        private const int TabIndicatorMilliseconds = 300;
-        private RectangleF tabIndicatorRect;          // 今描いている位置（台の座標）
-        private RectangleF tabIndicatorFrom;
-        private readonly System.Diagnostics.Stopwatch tabIndicatorClock = new System.Diagnostics.Stopwatch();
-        private Timer tabIndicatorTimer;
-
-        private Button TabButtonFor(PreviewWorkspacePage page)
-        {
-            return page == PreviewWorkspacePage.StateTransitions ? (Button)transitionsWorkspaceTabButton
-                : page == PreviewWorkspacePage.Parameters ? parametersTabButton : previewWorkspaceTabButton;
-        }
-
-        // 位置合わせ（大きさが変わったとき）は動かさずにその場へ置く。
-        private void PlaceTabIndicator()
-        {
-            if (tabIndicatorTimer != null && tabIndicatorTimer.Enabled) return;
-            tabIndicatorRect = TabButtonFor(previewWorkspacePage).Bounds;
-            tabSegmentBackground.Invalidate(true);
-        }
-
-        private void AnimateTabIndicator(PreviewWorkspacePage page)
-        {
-            RectangleF target = TabButtonFor(page).Bounds;
-            if (!SystemInformation.UIEffectsEnabled || tabIndicatorRect.IsEmpty || !tabSegmentBackground.IsHandleCreated)
-            {
-                tabIndicatorRect = target;
-                tabSegmentBackground.Invalidate(true);
-                return;
-            }
-            tabIndicatorFrom = tabIndicatorRect;
-            tabIndicatorClock.Restart();
-            if (tabIndicatorTimer == null)
-            {
-                tabIndicatorTimer = new Timer { Interval = 15 };
-                tabIndicatorTimer.Tick += (s, e) =>
-                {
-                    RectangleF goal = TabButtonFor(previewWorkspacePage).Bounds;
-                    float t = PageTransitionOverlay.Ease(tabIndicatorClock.ElapsedMilliseconds / (float)TabIndicatorMilliseconds);
-                    tabIndicatorRect = new RectangleF(
-                        tabIndicatorFrom.X + (goal.X - tabIndicatorFrom.X) * t,
-                        goal.Y,
-                        tabIndicatorFrom.Width + (goal.Width - tabIndicatorFrom.Width) * t,
-                        goal.Height);
-                    if (tabIndicatorClock.ElapsedMilliseconds >= TabIndicatorMilliseconds)
-                    {
-                        tabIndicatorRect = goal;
-                        tabIndicatorTimer.Stop();
-                    }
-                    tabSegmentBackground.Invalidate(true);
-                };
-            }
-            tabIndicatorTimer.Start();
-        }
-
-        private void PaintTabIndicator(Graphics g)
-        {
-            if (tabIndicatorRect.Width <= 1) return;
-            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-            Rectangle bounds = Rectangle.Round(new RectangleF(tabIndicatorRect.X, tabIndicatorRect.Y,
-                tabIndicatorRect.Width - 1, tabIndicatorRect.Height - 1));
-            using (var path = CreateRoundedPath(bounds, RadiusSm))
-            using (var brush = new SolidBrush(accentColor))
-                g.FillPath(brush, path);
         }
 
         private static string GetStateDisplayName(PlayerAnimationState state)
@@ -2882,9 +2791,10 @@ namespace SpriteSheetMaker
             caption.Padding = Padding.Empty;
             caption.BackColor = titleBack;
 
-            Button minimize = MakeCaptionButton("—");
-            Button maximize = MakeCaptionButton("□");
-            Button close = MakeCaptionButton("×");
+            Button minimize = MakeCaptionButton(CaptionGlyph.Minimize, "Minimize");
+            Button maximize = MakeCaptionButton(CaptionGlyph.Maximize, "Maximize");
+            Button close = MakeCaptionButton(CaptionGlyph.Close, "Close");
+            Resize += (s, e) => maximize.Invalidate();   // 最大化中は「元に戻す」の形にする
             minimize.Click += (s, e) => WindowState = FormWindowState.Minimized;
             maximize.Click += (s, e) => ToggleMaximize();
             close.FlatAppearance.MouseOverBackColor = dangerBackColor;
@@ -2916,10 +2826,15 @@ namespace SpriteSheetMaker
             return bar;
         }
 
-        private Button MakeCaptionButton(string text)
+        private enum CaptionGlyph { Minimize, Maximize, Close }
+
+        // 最小化・最大化・閉じるの記号は文字（—□×）だと字形ごとに線の太さが違うため、同じ太さの線で描く。
+        private Button MakeCaptionButton(CaptionGlyph glyph, string accessibleName)
         {
             var button = new Button();
-            button.Text = text;
+            button.Text = "";
+            button.AccessibleName = accessibleName;
+            button.Paint += (s, e) => PaintCaptionGlyph(e.Graphics, button, glyph);
             button.Size = new Size(60, 56);
             button.Margin = Padding.Empty;
             button.FlatStyle = FlatStyle.Flat;
@@ -2928,9 +2843,58 @@ namespace SpriteSheetMaker
             button.FlatAppearance.MouseDownBackColor = Color.FromArgb(55, 63, 70);
             button.BackColor = titleBack;
             button.ForeColor = lightText;
-            button.Font = new Font("Segoe UI", 14.0f, FontStyle.Regular, GraphicsUnit.Point);
             button.UseVisualStyleBackColor = false;
             return button;
+        }
+
+        private void PaintCaptionGlyph(Graphics g, Button button, CaptionGlyph glyph)
+        {
+            float scale = button.DeviceDpi / 96f;
+            int stroke = Math.Max(1, (int)Math.Round(scale));
+            int size = (int)Math.Round(10 * scale);          // Windows 標準と同じ 10px 角（100%時）
+            int left = (button.Width - size) / 2;
+            int top = (button.Height - size) / 2;
+            using (var brush = new SolidBrush(button.ForeColor))
+            {
+                // 縦横の線は塗りつぶしの帯で描き、どの記号も同じ太さ・同じ濃さにする。
+                Action<int, int, int, int> outline = (x, y, w, h) =>
+                {
+                    g.FillRectangle(brush, x, y, w, stroke);
+                    g.FillRectangle(brush, x, y + h - stroke, w, stroke);
+                    g.FillRectangle(brush, x, y, stroke, h);
+                    g.FillRectangle(brush, x + w - stroke, y, stroke, h);
+                };
+                switch (glyph)
+                {
+                    case CaptionGlyph.Minimize:
+                        g.FillRectangle(brush, left, top + (size - stroke) / 2, size, stroke);
+                        break;
+                    case CaptionGlyph.Maximize:
+                        if (WindowState == FormWindowState.Maximized)
+                        {
+                            // 元に戻す: 前に一回り小さい四角、右上に後ろの四角の角だけを見せる。
+                            int offset = 2 * stroke;
+                            int front = size - offset;
+                            outline(left, top + offset, front, front);
+                            g.FillRectangle(brush, left + offset, top, size - offset, stroke);
+                            g.FillRectangle(brush, left + size - stroke, top, stroke, size - offset);
+                        }
+                        else
+                        {
+                            outline(left, top, size, size);
+                        }
+                        break;
+                    case CaptionGlyph.Close:
+                        // 斜めの線は滑らかにすると細く見えるので、少しだけ太くして縦横の線と見た目をそろえる。
+                        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                        using (var pen = new Pen(button.ForeColor, stroke * 1.5f))
+                        {
+                            g.DrawLine(pen, left + 0.5f, top + 0.5f, left + size - 0.5f, top + size - 0.5f);
+                            g.DrawLine(pen, left + size - 0.5f, top + 0.5f, left + 0.5f, top + size - 0.5f);
+                        }
+                        break;
+                }
+            }
         }
 
         private void ToggleMaximize()

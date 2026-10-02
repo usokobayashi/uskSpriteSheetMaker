@@ -204,6 +204,7 @@ namespace SpriteSheetMaker
                 breakAfter.Add(terrainCheckBox);
                 breakAfter.Add(playerGroundOffsetGroup);
                 breakAfter.Add(playerColliderVisibleCheckBox);
+                breakAfter.Add(playerColliderSizeGroup);   // 補足文はサイズ欄の右へ回り込ませず、必ず次の行へ
             }
 
             row.SuspendLayout();
