@@ -144,6 +144,7 @@ namespace SpriteSheetMaker
                 UiFont.Restyle(sheetContextMenu);
                 UiFont.Restyle(projectMenu);
                 UiFont.Restyle(previewModeMenu);
+                UiFont.Restyle(bottomStatusStrip);
                 // メモの文字の大きさ・高さはフォントで決まるので測り直す。
                 MemoText.ResetFontMetrics();
                 foreach (SheetMemo memo in memos) memo.InvalidateLayout();

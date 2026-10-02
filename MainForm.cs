@@ -730,6 +730,9 @@ namespace SpriteSheetMaker
 
             BindText(refreshPreviewButton, "button.refresh");
             refreshPreviewButton.Size = new Size(94, 46);
+            // 左の回転アイコンと余白（約44px）を足した幅にする。言語で文言の長さが変わるので切り替えのたびに測り直す。
+            BindAction(() => refreshPreviewButton.Width = Math.Max(94,
+                TextRenderer.MeasureText(refreshPreviewButton.Text, refreshPreviewButton.Font).Width + 44));
             refreshPreviewButton.Click += (s, e) => QueuePreviewUpdate();
             ApplyButtonStyle(refreshPreviewButton);
 
@@ -1747,6 +1750,9 @@ namespace SpriteSheetMaker
             transitionColumnShift = shift;
             // 「使用」チェックボックスの実幅（枠16+隙間6+文字+余白）が列間隔58pxを超える分。
             transitionCheckShift = Math.Max(0, TextRenderer.MeasureText(Loc.T("field.use"), Font).Width + 16 + 6 + 10 - 58);
+            // 列の見出し「有効」も、開始の列までの幅（48px＋ずらした分）に収める。
+            using (Font headerFont = UiFont.Create(8.0f, FontStyle.Regular, GraphicsUnit.Point))
+                transitionCheckShift = Math.Max(transitionCheckShift, TextRenderer.MeasureText(Loc.T("field.enabled"), headerFont).Width + 6 - 48);
             // 開始・終了の入力欄は3桁が見える幅にし、列間隔（幅+6）と行の全幅に反映する。
             transitionInputWidth = Math.Max(64, RequiredInputWidth(new NumericUpDown { Minimum = 1, Maximum = 999 }));
             transitionInputExtra = 2 * (transitionInputWidth - 64);
@@ -1911,7 +1917,7 @@ namespace SpriteSheetMaker
         {
             var row = new Panel { Height = 26, Width = 400 + transitionColumnShift + transitionCheckShift + transitionInputExtra, Margin = Padding.Empty, BackColor = darkPanel };
             row.Controls.Add(MakeTransitionColumnLabel(Loc.T("field.state"), 8, 82 + transitionColumnShift));
-            row.Controls.Add(MakeTransitionColumnLabel(Loc.T("field.enabled"), 98 + transitionColumnShift, 48));
+            row.Controls.Add(MakeTransitionColumnLabel(Loc.T("field.enabled"), 98 + transitionColumnShift, 48 + transitionCheckShift));
             row.Controls.Add(MakeTransitionColumnLabel(Loc.T("field.start"), 150 + transitionColumnShift + transitionCheckShift, transitionInputWidth));
             row.Controls.Add(MakeTransitionColumnLabel(Loc.T("field.end"), 150 + transitionColumnShift + transitionCheckShift + transitionInputWidth + 6, transitionInputWidth));
             row.Controls.Add(MakeTransitionColumnLabel(Loc.T("field.key"), 150 + transitionColumnShift + transitionCheckShift + 2 * (transitionInputWidth + 6), 96));
@@ -2535,6 +2541,16 @@ namespace SpriteSheetMaker
 
         // 中央のシートと右のプレビューが最低限必要とする幅。
         private const int SheetPaneMinWidth = 180;
+
+        // シートの欄の最小幅。見出し（「シート」）と右の「全体表示」ボタンが重ならずに並ぶ幅を下回らない
+        // （長い言語では 180px だと見出しがボタンに隠れていた）。
+        private int SheetPaneMinimumWidth()
+        {
+            if (sheetTitleLabel == null || sheetFitButton == null) return SheetPaneMinWidth;
+            int header = sheetTitleLabel.Margin.Horizontal + sheetTitleLabel.PreferredSize.Width +
+                sheetFitButton.Margin.Horizontal + sheetFitButton.PreferredSize.Width + 8;
+            return Math.Max(SheetPaneMinWidth, header);
+        }
         private const int PreviewPaneMinWidth = 480;
 
         private bool adjustingLeftWidth;   // 幅をプログラムで変えている間（利用者の操作と区別する）
@@ -2546,7 +2562,7 @@ namespace SpriteSheetMaker
             // タブを切り替えても左ペイン幅が動かないよう、3ページのうち最大の幅にする。
             // 利用者が分割線でそれより広げていれば、その幅を保つ（狭くする方向は最大の幅で止まる）。
             int desired = Math.Max(GetDesiredLeftWidth(), userLeftWidth ?? 0);
-            int requiredPreviewWidth = SheetPaneMinWidth + PreviewPaneMinWidth + 1;
+            int requiredPreviewWidth = SheetPaneMinimumWidth() + PreviewPaneMinWidth + 1;
             int maximum = mainSplit.Width - requiredPreviewWidth - mainSplit.SplitterWidth;
             int minimum = Math.Min(300, Math.Max(80, maximum));
             if (maximum < minimum) return;
@@ -4083,7 +4099,7 @@ namespace SpriteSheetMaker
             float dpiScale = Math.Max(1.0f, DeviceDpi / 96.0f);
             // 幅は「中身が切れずに収まる最低限」（左ペイン＋シート＋プレビュー）。画面が小さい・拡大率が高いときでも、
             // 広げ縮めできる余地が残るよう、画面の80%までにとどめる。ただし中身の最低限（文字が拡大率で大きくなる分を含む）は割らない。
-            int contentWidth = GetDesiredLeftWidth() + SheetPaneMinWidth + PreviewPaneMinWidth + 4 + 2 * ResizeGrip;
+            int contentWidth = GetDesiredLeftWidth() + SheetPaneMinimumWidth() + PreviewPaneMinWidth + 4 + 2 * ResizeGrip;
             int idealWidth = (int)Math.Round(contentWidth * dpiScale);
             int neededWidth = (int)Math.Round(contentWidth * (1 + 0.4 * (dpiScale - 1)));
             int minimumWidth = Math.Min(idealWidth, Math.Max(neededWidth, (int)(working.Width * 0.80)));
@@ -4103,7 +4119,7 @@ namespace SpriteSheetMaker
             adjustingPreviewSplit = true;
             try
             {
-                previewSplit.Panel1MinSize = SheetPaneMinWidth;
+                previewSplit.Panel1MinSize = SheetPaneMinimumWidth();
                 previewSplit.Panel2MinSize = PreviewPaneMinWidth;
 
                 int desiredRight = Math.Max(PreviewPaneMinWidth, (int)Math.Round(previewSplit.Width * 0.46));
