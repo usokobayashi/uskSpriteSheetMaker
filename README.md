@@ -6,17 +6,17 @@
 
 ## ダウンロード・使い方
 
-1. [Releases](../../releases) から `uskSpriteSheetMaker.exe` をダウンロードします。インストールは不要です。
-2. 起動したウィンドウに、画像またはフォルダをドラッグ＆ドロップします。
-3. 右上の PNG / TGA / GIF / WebP ボタンで書き出します。
+- [Releases](../../releases) から `uskSpriteSheetMaker.exe` をダウンロードします。インストールは不要です。
+- 起動したウィンドウに、画像またはフォルダをドラッグ＆ドロップします。
+- 右上の PNG / TGA / GIF / WebP ボタンで書き出します。
 
-| 1. 起動 | 2. 画像を追加 |
+| 画像を追加 | プレビュー |
 | --- | --- |
-| ![起動直後の画面](docs/images/guide/01_start.png) | ![画像を追加した画面](docs/images/guide/02_dropped.png) |
+| ![画像を追加する操作](docs/images/guide/add_images.gif) | ![アニメーションのプレビュー](docs/images/guide/preview.gif) |
 
-| 3. 書き出し | 出力例 |
+| 書き出し | デバッグ |
 | --- | --- |
-| ![書き出し完了の画面](docs/images/guide/04_exported.png) | ![スプライトシートの出力例](docs/images/guide/05_result.png) |
+| ![画像を書き出す操作](docs/images/guide/export.gif) | ![デバッグ用のプレビュー操作](docs/images/guide/debug.gif) |
 
 ## 主な機能
 
