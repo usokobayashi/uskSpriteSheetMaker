@@ -22,6 +22,7 @@ namespace SpriteSheetMakerTests
             yield return new TestCase { Name = "PageTransition_EaseGoesFromZeroToOneAndSlowsDown", Action = EaseGoesFromZeroToOneAndSlowsDown };
             yield return new TestCase { Name = "PageTransition_OverlayIsRemovedAfterSwitching", Action = OverlayIsRemovedAfterSwitching };
             yield return new TestCase { Name = "FitAnimation_ReturnsToFitInAboutPointTwoSeconds", Action = FitAnimation_ReturnsToFitInAboutPointTwoSeconds };
+            yield return new TestCase { Name = "LeftPane_WidenedWidthSurvivesTabSwitch", Action = LeftPane_WidenedWidthSurvivesTabSwitch };
             yield return new TestCase { Name = "TabBar_IndicatorSlidesToTheClickedTab", Action = TabBar_IndicatorSlidesToTheClickedTab };
         }
 
@@ -137,6 +138,38 @@ namespace SpriteSheetMakerTests
 
                 bar.Width = 420;
                 Assert.AreEqual((RectangleF)bar.GetTabBounds(2), bar.IndicatorBounds, "follows a resize");
+            }
+        }
+
+        // 分割線で左ペインを広げたら、タブを切り替えてもその幅のまま。最大の幅より狭くはならない。
+        private static void LeftPane_WidenedWidthSurvivesTabSwitch()
+        {
+            Loc.SettingsPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "SpriteSheetMakerTests-leftpane.ini");
+            UpdateChecker.IsEnabled = false;
+            using (var form = new MainForm { StartPosition = FormStartPosition.Manual, Location = new Point(-4000, -4000), Size = new Size(1600, 900), ShowInTaskbar = false })
+            {
+                form.Show();
+                Pump(20);
+                var split = (SplitContainer)typeof(MainForm).GetField("mainSplit", Flags).GetValue(form);
+                Type pageType = typeof(MainForm).GetNestedType("PreviewWorkspacePage", BindingFlags.NonPublic);
+                MethodInfo setPage = typeof(MainForm).GetMethod("SetPreviewWorkspacePage", Flags);
+                int start = split.SplitterDistance;
+
+                split.SplitterDistance = start + 120;   // 利用者が分割線を右へ動かした
+                Pump(5);
+                foreach (string page in new[] { "StateTransitions", "Parameters", "Preview" })
+                {
+                    setPage.Invoke(form, new[] { Enum.Parse(pageType, page) });
+                    Pump(5);
+                    Assert.AreEqual(start + 120, split.SplitterDistance, "keeps the widened width on " + page);
+                }
+
+                split.SplitterDistance = start + 40;    // 少し戻す
+                Pump(5);
+                setPage.Invoke(form, new[] { Enum.Parse(pageType, "StateTransitions") });
+                Pump(5);
+                Assert.AreEqual(start + 40, split.SplitterDistance, "a narrower (but still wide enough) width is kept too");
+                Assert.IsTrue(split.Panel1MinSize <= start, "cannot be dragged narrower than the widest page needs");
             }
         }
 

@@ -909,6 +909,11 @@ namespace SpriteSheetMaker
             mainSplit.Dock = DockStyle.Fill;
             mainSplit.FixedPanel = FixedPanel.Panel1;
             mainSplit.SplitterWidth = 1;
+            // 利用者が分割線を動かして決めた左ペインの幅を覚え、タブを切り替えても戻さない。
+            mainSplit.SplitterMoved += (s, e) =>
+            {
+                if (!adjustingLeftWidth) userLeftWidth = mainSplit.SplitterDistance;
+            };
             mainSplit.BackColor = dividerColor;
             mainSplit.Panel1.BackColor = darkBack;
             mainSplit.Panel2.BackColor = workspaceBack;
@@ -2498,11 +2503,15 @@ namespace SpriteSheetMaker
         private const int SheetPaneMinWidth = 180;
         private const int PreviewPaneMinWidth = 480;
 
+        private bool adjustingLeftWidth;   // 幅をプログラムで変えている間（利用者の操作と区別する）
+        private int? userLeftWidth;        // 利用者が分割線で広げた左ペインの幅
+
         private void AdjustLeftWorkspaceWidth()
         {
             if (mainSplit == null || mainSplit.Width <= 0) return;
-            // タブを切り替えても左ペイン幅が動かないよう、常に3ページのうち最大の幅にする。
-            int desired = GetDesiredLeftWidth();
+            // タブを切り替えても左ペイン幅が動かないよう、3ページのうち最大の幅にする。
+            // 利用者が分割線でそれより広げていれば、その幅を保つ（狭くする方向は最大の幅で止まる）。
+            int desired = Math.Max(GetDesiredLeftWidth(), userLeftWidth ?? 0);
             int requiredPreviewWidth = SheetPaneMinWidth + PreviewPaneMinWidth + 1;
             int maximum = mainSplit.Width - requiredPreviewWidth - mainSplit.SplitterWidth;
             int minimum = Math.Min(300, Math.Max(80, maximum));
@@ -2510,10 +2519,19 @@ namespace SpriteSheetMaker
             int target = Math.Max(minimum, Math.Min(maximum, desired));
             // 先に最小幅を緩めてから位置を変え、最後に「このタブに必要な幅」を最小幅にする。
             // これで分割線を狭く動かしても下部ボタンやタブ文字が切れない。
-            if (mainSplit.SplitterDistance == target && mainSplit.Panel1MinSize == target) return;
-            mainSplit.Panel1MinSize = 80;
-            mainSplit.SplitterDistance = target;
-            mainSplit.Panel1MinSize = target;
+            int minimumWidth = Math.Max(minimum, Math.Min(maximum, GetDesiredLeftWidth()));
+            if (mainSplit.SplitterDistance == target && mainSplit.Panel1MinSize == minimumWidth) return;
+            adjustingLeftWidth = true;
+            try
+            {
+                mainSplit.Panel1MinSize = 80;
+                mainSplit.SplitterDistance = target;
+                mainSplit.Panel1MinSize = minimumWidth;
+            }
+            finally
+            {
+                adjustingLeftWidth = false;
+            }
             ApplyPreviewSplitOnly();
         }
 
@@ -4009,7 +4027,15 @@ namespace SpriteSheetMaker
 
                 if (max >= min)
                 {
-                    mainSplit.SplitterDistance = Math.Max(min, Math.Min(max, target));
+                    adjustingLeftWidth = true;
+                    try
+                    {
+                        mainSplit.SplitterDistance = Math.Max(min, Math.Min(max, target));
+                    }
+                    finally
+                    {
+                        adjustingLeftWidth = false;
+                    }
                 }
             }
 

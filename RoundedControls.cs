@@ -351,7 +351,7 @@ namespace SpriteSheetMaker
             {
                 get { return index == bar.selectedIndex ? AccessibleStates.Selected | AccessibleStates.Selectable : AccessibleStates.Selectable; }
             }
-            public override string DefaultAction { get { return "Select"; } }
+            public override string DefaultAction { get { return Loc.T("access.selectTab"); } }
             public override void DoDefaultAction()
             {
                 Action<int> handler = bar.TabClicked;

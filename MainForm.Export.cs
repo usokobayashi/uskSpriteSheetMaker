@@ -135,7 +135,7 @@ namespace SpriteSheetMaker
                 .Where(p => p.CellNumber >= snapshot.StartCell && p.CellNumber <= snapshot.EndCell)
                 .ToList();
             if (selected.Count == 0)
-                throw new InvalidOperationException(Loc.T("message.noGifFrames"));
+                throw new InvalidOperationException(Loc.T("message.noAnimationFrames", format == ImageOutputFormat.WebP ? "WebP" : "GIF"));
 
             // 各フレームは同じ大きさである必要があるため、最大サイズに揃える。
             int frameWidth = selected.Max(p => p.CellRect.Width);
