@@ -856,7 +856,7 @@ namespace SpriteSheetMaker
                 }
                 float shadeTop = terrain != null ? pan.Y + terrain.PeakTop * zoom : topY;
                 using (var shade = new LinearGradientBrush(new RectangleF(0, shadeTop, Width, Math.Max(2, bottom - shadeTop)),
-                    Color.FromArgb(0, 0, 0, 0), Color.FromArgb(90, 8, 10, 22), LinearGradientMode.Vertical))
+                    Color.FromArgb(0, 0, 0, 0), TerrainShade, LinearGradientMode.Vertical))
                     g.FillPath(shade, path);
             }
             g.Restore(state);
@@ -888,15 +888,16 @@ namespace SpriteSheetMaker
             g.SetClip(rect);
             using (var brush = new TextureBrush(floorTile, WrapMode.Tile))
             {
+                // 地面と同じ基準で敷き、方眼のマスが地面とそろうようにする。
                 brush.ResetTransform();
-                brush.TranslateTransform(rect.X, rect.Y);
+                brush.TranslateTransform(pan.X, pan.Y + terrain.GroundTop * zoom);
                 brush.ScaleTransform(zoom, zoom);
                 g.InterpolationMode = InterpolationMode.NearestNeighbor;
                 g.PixelOffsetMode = PixelOffsetMode.Half;
                 g.FillRectangle(brush, rect);
             }
             using (var shade = new LinearGradientBrush(new RectangleF(rect.X, rect.Y, rect.Width, rect.Height + 1),
-                Color.FromArgb(0, 0, 0, 0), Color.FromArgb(110, 8, 10, 22), LinearGradientMode.Vertical))
+                Color.FromArgb(0, 0, 0, 0), TerrainShade, LinearGradientMode.Vertical))
                 g.FillRectangle(shade, rect);
             g.Restore(state);
             float edge = Math.Max(1, 2 * zoom);
@@ -904,34 +905,19 @@ namespace SpriteSheetMaker
                 g.FillRectangle(accent, rect.X, rect.Y, rect.Width, edge);
         }
 
+        // 地形の質感: デバッグ用と割り切った方眼（Q-011 の回答「B。テーマカラーに合わせる」）。
+        // 面はパネルの色、線は区切り線の色（MainForm の panelElevated・dividerColor と同じ）。
+        private static readonly Color TerrainFill = Color.FromArgb(31, 40, 47);
+        private static readonly Color TerrainGridLine = Color.FromArgb(63, 73, 81);
+        private static readonly Color TerrainShade = Color.FromArgb(90, 12, 17, 22);   // 下へ向かって暗くする影
+        private const int TerrainGridCell = 16;   // 1マスの大きさ（シーンの論理px。キャラクターの大きさの目安になる）
+
         private static Bitmap CreateFloorTile()
         {
-            // 32x12: 6px高のレンガを2段、段ごとに半分ずらして敷く。
-            const int tileWidth = 32, tileHeight = 12, brickHeight = 6, brickWidth = 16;
-            Color mortar = Color.FromArgb(22, 25, 40);
-            Color[] bricks = { Color.FromArgb(38, 42, 66), Color.FromArgb(43, 48, 76) };
-            Color highlight = Color.FromArgb(62, 68, 104);
-            Color shadow = Color.FromArgb(29, 32, 52);
-            Color speck = Color.FromArgb(54, 60, 94);
-            var tile = new Bitmap(tileWidth, tileHeight);
-            for (int y = 0; y < tileHeight; y++)
-            {
-                int row = y / brickHeight;
-                int localY = y % brickHeight;
-                int offset = row == 0 ? 0 : brickWidth / 2;
-                for (int x = 0; x < tileWidth; x++)
-                {
-                    int bx = (x + offset) % tileWidth;
-                    int localX = bx % brickWidth;
-                    int brickIndex = (bx / brickWidth + row) % 2;
-                    Color c = bricks[brickIndex];
-                    if (localX == 0 || localY == brickHeight - 1) c = mortar;
-                    else if (localY == 0) c = highlight;
-                    else if (localY == brickHeight - 2) c = shadow;
-                    else if ((localX * 7 + localY * 13 + row * 5) % 23 == 0) c = speck;
-                    tile.SetPixel(x, y, c);
-                }
-            }
+            var tile = new Bitmap(TerrainGridCell, TerrainGridCell);
+            for (int y = 0; y < TerrainGridCell; y++)
+                for (int x = 0; x < TerrainGridCell; x++)
+                    tile.SetPixel(x, y, x == 0 || y == 0 ? TerrainGridLine : TerrainFill);
             return tile;
         }
 

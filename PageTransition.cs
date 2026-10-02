@@ -22,9 +22,9 @@ namespace SpriteSheetMaker
     internal sealed class PageTransitionOverlay : Control
     {
         private readonly Bitmap from;
-        private readonly Bitmap to;
-        private readonly PageTransitionKind kind;
-        private readonly int durationMs;
+        private Bitmap to;                 // null の間は「元の画面の絵」だけを出して待つ（下でページを切り替える間の目隠し）
+        private PageTransitionKind kind;
+        private int durationMs = 1;
         // 最初に画面へ出た時点から数える（切り替えの重い処理で表示が遅れても、動きが省かれないように）。
         private readonly Stopwatch clock = new Stopwatch();
         private readonly Stopwatch sinceCreated = Stopwatch.StartNew();   // 一度も描かれない場合の打ち切り用
@@ -36,22 +36,35 @@ namespace SpriteSheetMaker
         [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
         [DllImport("user32.dll")] private static extern bool RedrawWindow(IntPtr hWnd, IntPtr rect, IntPtr region, uint flags);
 
-        public PageTransitionOverlay(Bitmap from, Bitmap to, PageTransitionKind kind, int durationMs)
+        // 元の画面の絵だけを表示する覆い。ページを切り替える前に重ね、Begin で動きを始める。
+        public PageTransitionOverlay(Bitmap from)
         {
             this.from = from;
-            this.to = to;
-            this.kind = kind;
-            this.durationMs = Math.Max(1, durationMs);
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
                 ControlStyles.OptimizedDoubleBuffer | ControlStyles.Opaque, true);
             TabStop = false;
             timer.Tick += (s, e) =>
             {
-                if ((clock.IsRunning && clock.ElapsedMilliseconds >= this.durationMs) ||
-                    (!clock.IsRunning && sinceCreated.ElapsedMilliseconds >= this.durationMs * 3)) Finish();
+                if ((clock.IsRunning && clock.ElapsedMilliseconds >= durationMs) ||
+                    (!clock.IsRunning && sinceCreated.ElapsedMilliseconds >= durationMs * 3)) Finish();
                 else Invalidate();
             };
+        }
+
+        public PageTransitionOverlay(Bitmap from, Bitmap to, PageTransitionKind kind, int durationMs) : this(from)
+        {
+            Begin(to, kind, durationMs);
+        }
+
+        // 新しいページの絵がそろったら、横移動を始める（時間は次に描かれた時点から数える）。
+        public void Begin(Bitmap to, PageTransitionKind kind, int durationMs)
+        {
+            this.to = to;
+            this.kind = kind;
+            this.durationMs = Math.Max(1, durationMs);
+            sinceCreated.Restart();
             timer.Start();
+            Invalidate();
         }
 
         // 0→1 の進み具合（終わり際をゆっくりにする）。
@@ -94,9 +107,14 @@ namespace SpriteSheetMaker
 
         protected override void OnPaint(PaintEventArgs e)
         {
+            Graphics g = e.Graphics;
+            if (to == null)
+            {
+                g.DrawImageUnscaled(from, 0, 0);   // まだ待っている間は、切り替える前の画面そのまま
+                return;
+            }
             if (!clock.IsRunning) clock.Start();
             float progress = Ease(clock.ElapsedMilliseconds / (float)durationMs);
-            Graphics g = e.Graphics;
             g.Clear(BackColor);
             int shift = (int)Math.Round(Width * progress);
             int direction = kind == PageTransitionKind.SlideFromRight ? -1 : 1;
@@ -110,7 +128,7 @@ namespace SpriteSheetMaker
             {
                 timer.Dispose();
                 from.Dispose();
-                to.Dispose();
+                if (to != null) to.Dispose();
             }
             base.Dispose(disposing);
         }

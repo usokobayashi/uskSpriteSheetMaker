@@ -2352,7 +2352,7 @@ namespace SpriteSheetMaker
             if (previewTargetMode == mode) return;
             EndAssignMode();
             // 状態遷移・設定のページは種類ごとに中身が変わるので、選択欄の並び（デフォルト・エフェクト・キャラクター）の向きへ動かす。
-            Bitmap before = previewWorkspacePage != PreviewWorkspacePage.Preview ? CaptureLeftWorkspace() : null;
+            PageTransitionOverlay cover = previewWorkspacePage != PreviewWorkspacePage.Preview ? CoverLeftWorkspace() : null;
             int previousModeOrder = PreviewModeOrder(previewTargetMode);
             previewTargetMode = mode;
             lastClickedCanvas = animCanvas;
@@ -2360,8 +2360,8 @@ namespace SpriteSheetMaker
             animationTimer.Stop();
             if (mode == PreviewTargetMode.Standard) animationIndex = GetFirstPlayableFrameIndex();
             ApplyPreviewTargetModeUi();
-            if (before != null)
-                StartLeftWorkspaceTransition(before, PreviewModeOrder(mode) > previousModeOrder
+            if (cover != null)
+                StartLeftWorkspaceTransition(cover, PreviewModeOrder(mode) > previousModeOrder
                     ? PageTransitionKind.SlideFromRight : PageTransitionKind.SlideFromLeft);
             animCanvas.ResetToFitAnimated();
             ResetSimulation();
@@ -2382,22 +2382,24 @@ namespace SpriteSheetMaker
         {
             EndAssignMode();
             PreviewWorkspacePage previousPage = previewWorkspacePage;
-            Bitmap before = previousPage != page ? CaptureLeftWorkspace() : null;
+            // 先に今の画面の絵で覆ってから切り替える。新しいページの入力欄などが覆いより先に
+            // 画面へ出て、一瞬ちらついて見えるのを防ぐ。
+            PageTransitionOverlay cover = previousPage != page ? CoverLeftWorkspace() : null;
             try
             {
                 SwitchPreviewWorkspacePage(page);
             }
             catch
             {
-                if (before != null) before.Dispose();
+                if (cover != null) cover.Finish();
                 throw;
             }
             // タブの並び（フォルダ・状態遷移・設定）に合わせて、右のタブへは右から、左のタブへは左から入れる。
-            if (before != null)
-                StartLeftWorkspaceTransition(before, (int)page > (int)previousPage
+            if (cover != null)
+                StartLeftWorkspaceTransition(cover, (int)page > (int)previousPage
                     ? PageTransitionKind.SlideFromRight : PageTransitionKind.SlideFromLeft);
             // ページの切り替え（重い処理）が終わってから時間を数え始め、ページの横移動と同時に滑らせる。
-            workspaceTabBar.SelectTab((int)page, before != null);
+            workspaceTabBar.SelectTab((int)page, cover != null);
         }
 
         private const int PageSlideMilliseconds = 300;
@@ -2417,17 +2419,12 @@ namespace SpriteSheetMaker
             return image;
         }
 
-        private void StartLeftWorkspaceTransition(Bitmap before, PageTransitionKind kind)
+        // 今の左ペインの絵で覆う（見た目は変わらない）。この下でページを切り替える。演出できなければ null。
+        private PageTransitionOverlay CoverLeftWorkspace()
         {
-            if (before.Size != leftWorkspaceHost.Size)
-            {
-                before.Dispose();
-                return;
-            }
-            leftWorkspaceHost.PerformLayout();
-            var after = new Bitmap(leftWorkspaceHost.Width, leftWorkspaceHost.Height, PixelFormat.Format32bppArgb);
-            leftWorkspaceHost.DrawToBitmap(after, new Rectangle(0, 0, after.Width, after.Height));
-            var overlay = new PageTransitionOverlay(before, after, kind, PageSlideMilliseconds)
+            Bitmap before = CaptureLeftWorkspace();
+            if (before == null) return null;
+            var overlay = new PageTransitionOverlay(before)
             {
                 Dock = DockStyle.Fill,
                 BackColor = darkPanel
@@ -2436,6 +2433,43 @@ namespace SpriteSheetMaker
             overlay.Disposed += (s, e) => { if (leftWorkspaceTransition == overlay) leftWorkspaceTransition = null; };
             leftWorkspaceHost.Controls.Add(overlay);
             overlay.BringToFront();
+            overlay.Update();   // 切り替えの前に、覆いを確実に画面へ出しておく
+            return overlay;
+        }
+
+        // 覆いの下で切り替えたページの絵を撮り、横移動を始める。
+        private void StartLeftWorkspaceTransition(PageTransitionOverlay overlay, PageTransitionKind kind)
+        {
+            if (overlay.IsDisposed) return;
+            if (overlay.Size != leftWorkspaceHost.ClientSize)
+            {
+                overlay.Finish();
+                return;
+            }
+            leftWorkspaceHost.PerformLayout();
+            overlay.Begin(CaptureLeftWorkspacePages(), kind, PageSlideMilliseconds);
+        }
+
+        // 覆いを除いた左ペインの中身（表示中のページ）を画像にする。
+        // 親ごと DrawToBitmap すると重なり順が逆に描かれて覆いが混ざるため、ページを1つずつ描く。
+        private Bitmap CaptureLeftWorkspacePages()
+        {
+            var image = new Bitmap(leftWorkspaceHost.ClientSize.Width, leftWorkspaceHost.ClientSize.Height, PixelFormat.Format32bppArgb);
+            using (Graphics g = Graphics.FromImage(image))
+            {
+                g.Clear(darkPanel);
+                for (int i = leftWorkspaceHost.Controls.Count - 1; i >= 0; i--)   // 奥から手前へ
+                {
+                    Control page = leftWorkspaceHost.Controls[i];
+                    if (!page.Visible || page is PageTransitionOverlay || page.Width <= 0 || page.Height <= 0) continue;
+                    using (var part = new Bitmap(page.Width, page.Height, PixelFormat.Format32bppArgb))
+                    {
+                        page.DrawToBitmap(part, new Rectangle(0, 0, part.Width, part.Height));
+                        g.DrawImageUnscaled(part, page.Left, page.Top);
+                    }
+                }
+            }
+            return image;
         }
 
         private void SwitchPreviewWorkspacePage(PreviewWorkspacePage page)
