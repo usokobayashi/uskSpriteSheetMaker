@@ -16,7 +16,7 @@
 
 | 書き出し | 出力例 |
 | --- | --- |
-| ![画像を書き出す操作](docs/images/guide/export.gif) | ![スプライトシートの出力例](docs/images/guide/05_result.png) |
+| ![画像を書き出す操作](docs/images/guide/export.gif) | <img src="docs/images/guide/05_result.png" alt="サンプルプロジェクトをPNGで書き出した出力例" height="280"> |
 
 ## 主な機能
 
