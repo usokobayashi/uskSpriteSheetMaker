@@ -52,6 +52,13 @@ namespace SpriteSheetMaker
                 string path = Loc.SettingsPath;
                 var lines = new List<string>();
                 var written = new HashSet<string>();
+                // 読み込みでは大きすぎるファイルを無視するので、そのまま書き足しても設定が効かない。
+                // 異常な中身は別名で残し、今回の設定だけで作り直す。
+                if (File.Exists(path) && new FileInfo(path).Length > MaxSettingsBytes)
+                {
+                    File.Copy(path, path + ".toolarge", true);
+                    File.Delete(path);
+                }
                 if (File.Exists(path))
                 {
                     foreach (string line in File.ReadAllLines(path, Encoding.UTF8))

@@ -218,3 +218,6 @@ access.selectTab=选择
 filter.images=图像文件
 filter.formatImage={0} 图像
 filter.animatedWebP=WebP 动画
+dialog.saveMissingTitle=部分图像缺失
+message.saveMissing=有{0}张图像缺失。要在不包含它们的情况下保存吗？
+button.saveWithoutMissing=不含缺失图像保存

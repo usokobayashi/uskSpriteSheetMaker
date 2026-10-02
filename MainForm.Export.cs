@@ -319,6 +319,7 @@ namespace SpriteSheetMaker
             exportCancellation = null;
             if (source != null) source.Dispose();
             SetExportBusy(false);
+            ReleaseDirectoriesAfterExport();   // 書き出し中に切り替えたプロジェクトの、古い展開先をここで消す
             FinishExportBar(!canceled && failure == null);
             if (canceled)
             {

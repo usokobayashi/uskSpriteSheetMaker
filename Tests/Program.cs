@@ -29,6 +29,7 @@ namespace SpriteSheetMakerTests
             cases.AddRange(FolderAddTests.All());
             cases.AddRange(PageTransitionTests.All());
             cases.AddRange(MotionTests.All());
+            cases.AddRange(DetailFixTests.All());
 
             int failed = TestRunner.RunAll(cases);
             return failed == 0 ? 0 : 1;

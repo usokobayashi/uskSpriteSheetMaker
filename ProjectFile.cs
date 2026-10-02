@@ -192,7 +192,51 @@ namespace SpriteSheetMaker
                     result.SavedImages++;
                 }
             }
+            if (result.MissingImages.Count > 0) RemapCellsAfterRemovingImages(source, copy);
             return copy;
+        }
+
+        // 見つからない画像を除くと、後ろの画像のセル番号が詰まる。状態への割り当て（開始〜終了）が
+        // 同じ画像を指し続けるよう、残った画像の新しいセル番号へ付け替える（画面の RemapCellAssignments と同じ考え方）。
+        // セル番号は、フォルダごとに新しい行から始まり、1行に横セル数ぶんの番号が並ぶ。
+        internal static void RemapCellsAfterRemovingImages(ProjectDocument source, ProjectDocument copy)
+        {
+            int columns = Math.Max(1, source.Columns);
+            var oldToNew = new SortedDictionary<int, int>();   // 残った画像の 元のセル番号 → 新しいセル番号
+            int nextOld = 1, nextNew = 1;
+            for (int folderIndex = 0; folderIndex < source.Folders.Count; folderIndex++)
+            {
+                List<ProjectImage> images = source.Folders[folderIndex].Images;
+                int kept = 0;
+                for (int i = 0; i < images.Count; i++)
+                {
+                    if (!File.Exists(images[i].Path)) continue;
+                    oldToNew[nextOld + i] = nextNew + kept;
+                    kept++;
+                }
+                nextOld += (int)Math.Ceiling(images.Count / (double)columns) * columns;
+                nextNew += (int)Math.Ceiling(kept / (double)columns) * columns;
+            }
+
+            Func<int, int, int[]> remap = (start, end) =>
+            {
+                List<int> inside = oldToNew.Where(pair => pair.Key >= start && pair.Key <= end).Select(pair => pair.Value).ToList();
+                return inside.Count == 0 ? null : new[] { inside.Min(), inside.Max() };
+            };
+            foreach (ProjectClip clip in copy.PlayerClips.Concat(new[] { copy.EffectClip }))
+            {
+                if (clip == null) continue;
+                int[] range = remap(clip.StartCell, clip.EndCell);
+                if (range == null) continue;
+                clip.StartCell = range[0];
+                clip.EndCell = range[1];
+            }
+            int[] standard = remap(copy.StartCell, copy.EndCell);
+            if (standard != null)
+            {
+                copy.StartCell = standard[0];
+                copy.EndCell = standard[1];
+            }
         }
 
         // 画像を extractDir へ展開して読み込む。ZIP内の不正なパス（親フォルダへ出るもの）は無視する。

@@ -1843,18 +1843,18 @@ namespace SpriteSheetMaker
             AddStateTransitionRow(list, PlayerAnimationState.MoveLeft, Loc.T("state.moveLeft"), 0);
             AddStateTransitionRow(list, PlayerAnimationState.MoveUp, Loc.T("state.moveUp"), 0);
             AddStateTransitionRow(list, PlayerAnimationState.MoveDown, Loc.T("state.moveDown"), 0);
-            list.Controls.Add(CreateTransitionGroupHeader(Loc.T("group.jumpRight"), Color.FromArgb(255, 205, 64)));
+            list.Controls.Add(CreateTransitionGroupHeader(Loc.T("group.jumpRight"), Color.FromArgb(255, 205, 64), Loc.T("hint.jumpFallback")));
             AddStateTransitionRow(list, PlayerAnimationState.JumpRightStart, Loc.T("state.jumpStart"), 18);
             AddStateTransitionRow(list, PlayerAnimationState.JumpRightAir, Loc.T("state.jumpAir"), 18);
             AddStateTransitionRow(list, PlayerAnimationState.JumpRightLand, Loc.T("state.jumpLand"), 18);
-            list.Controls.Add(CreateTransitionGroupHeader(Loc.T("group.jumpLeft"), Color.FromArgb(255, 205, 64)));
+            list.Controls.Add(CreateTransitionGroupHeader(Loc.T("group.jumpLeft"), Color.FromArgb(255, 205, 64), Loc.T("hint.jumpFallback")));
             AddStateTransitionRow(list, PlayerAnimationState.JumpLeftStart, Loc.T("state.jumpStart"), 18);
             AddStateTransitionRow(list, PlayerAnimationState.JumpLeftAir, Loc.T("state.jumpAir"), 18);
             AddStateTransitionRow(list, PlayerAnimationState.JumpLeftLand, Loc.T("state.jumpLand"), 18);
-            list.Controls.Add(CreateTransitionGroupHeader(Loc.T("group.attackRight"), Color.FromArgb(70, 145, 255)));
+            list.Controls.Add(CreateTransitionGroupHeader(Loc.T("group.attackRight"), Color.FromArgb(70, 145, 255), null));
             AddStateTransitionRow(list, PlayerAnimationState.AttackRight1, Loc.T("action.attack1"), 18);
             AddStateTransitionRow(list, PlayerAnimationState.AttackRight2, Loc.T("action.attack2"), 18);
-            list.Controls.Add(CreateTransitionGroupHeader(Loc.T("group.attackLeft"), Color.FromArgb(70, 145, 255)));
+            list.Controls.Add(CreateTransitionGroupHeader(Loc.T("group.attackLeft"), Color.FromArgb(70, 145, 255), null));
             AddStateTransitionRow(list, PlayerAnimationState.AttackLeft1, Loc.T("action.attack1"), 18);
             AddStateTransitionRow(list, PlayerAnimationState.AttackLeft2, Loc.T("action.attack2"), 18);
         }
@@ -1880,7 +1880,8 @@ namespace SpriteSheetMaker
             ResizeStateTransitionRows(list);
         }
 
-        private Panel CreateTransitionGroupHeader(string text, Color color)
+        // hintText は見出しの右に出す補足（null なら出さない。未設定の段階の代用はジャンプだけの仕組み）。
+        private Panel CreateTransitionGroupHeader(string text, Color color, string hintText)
         {
             var row = new Panel { Height = 38, Width = 400 + transitionColumnShift + transitionCheckShift + transitionInputExtra, Margin = new Padding(0, 8, 0, 0), BackColor = darkPanel };
             var marker = new Panel { BackColor = color, Location = new Point(7, 9), Size = new Size(3, 20) };
@@ -1894,7 +1895,7 @@ namespace SpriteSheetMaker
             };
             var hint = new Label
             {
-                Text = Loc.T("hint.jumpFallback"),
+                Text = hintText ?? "",
                 AutoEllipsis = true,
                 Location = new Point(145, 10),
                 Size = new Size(250, 22),
@@ -1909,7 +1910,7 @@ namespace SpriteSheetMaker
             hint.Size = new Size(Math.Max(40, row.Width - hintX - 8), 22);
             row.Controls.Add(marker);
             row.Controls.Add(label);
-            row.Controls.Add(hint);
+            if (hintText != null) row.Controls.Add(hint);
             return row;
         }
 
@@ -3143,6 +3144,12 @@ namespace SpriteSheetMaker
                 var confirm = new Button { Text = confirmText, Size = new Size(110, 42), Location = new Point(224, 148) };
                 ApplyButtonStyle(cancel);
                 ApplyButtonStyle(confirm);
+                // 長い言語でも切れないよう、ボタンは文字に合わせて広げ、2つを中央にそろえて並べる。
+                foreach (Button button in new[] { cancel, confirm })
+                    button.Width = Math.Max(110, TextRenderer.MeasureText(button.Text, dialog.Font).Width + 28);   // 置いたあとはダイアログの書体で描かれる
+                int buttonsLeft = Math.Max(28, (dialog.ClientSize.Width - cancel.Width - 12 - confirm.Width) / 2);
+                cancel.Left = buttonsLeft;
+                confirm.Left = cancel.Right + 12;
                 confirm.BackColor = dangerBackColor;
                 confirm.FlatAppearance.BorderColor = Color.FromArgb(255, 90, 100);
                 cancel.DialogResult = DialogResult.Cancel;
@@ -6700,7 +6707,9 @@ namespace SpriteSheetMaker
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
             Loc.LanguageChanged -= OnUiLanguageChanged;
+            if (projectDirectoryLock != null) { projectDirectoryLock.Dispose(); projectDirectoryLock = null; }
             DeleteQuietly(projectExtractDir);
+            ReleaseDirectoriesAfterExport();
             projectMenu.Dispose();
             if (clickTracker != null)
             {

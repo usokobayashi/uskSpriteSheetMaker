@@ -218,3 +218,6 @@ access.selectTab=Pilih
 filter.images=File Gambar
 filter.formatImage=Gambar {0}
 filter.animatedWebP=WebP Animasi
+dialog.saveMissingTitle=Ada Gambar yang Hilang
+message.saveMissing={0} gambar hilang. Simpan tanpa gambar tersebut?
+button.saveWithoutMissing=Simpan Tanpa Gambar

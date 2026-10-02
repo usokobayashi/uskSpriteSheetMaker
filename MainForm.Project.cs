@@ -17,6 +17,10 @@ namespace SpriteSheetMaker
 
         private string projectPath;                     // 保存先。未保存の新規は null
         private string projectExtractDir;               // 開いたプロジェクトの画像の展開先
+        private FileStream projectDirectoryLock;        // 展開先を使用中であることを示す印（開いたまま持つ）
+        // 書き出し中に別のプロジェクトへ切り替えたとき、書き出しが読んでいる古い展開先は終わるまで消さない。
+        private readonly List<KeyValuePair<string, FileStream>> directoriesAfterExport = new List<KeyValuePair<string, FileStream>>();
+        private const string DirectoryInUseFile = ".in-use";
         private AppStateSnapshot projectBaseline;       // 保存・読み込み直後の状態（未保存判定の基準）
         private AppStateSnapshot defaultSnapshot;       // 起動直後の状態（「新規」で戻す先）
         private double? previewSheetRatio;              // ユーザーが動かしたシート/プレビュー境界（幅の割合）
@@ -175,6 +179,8 @@ namespace SpriteSheetMaker
         internal void ResetToNewProject()
         {
             string oldDirectory = projectExtractDir;
+            FileStream oldLock = projectDirectoryLock;
+            projectDirectoryLock = null;
             RestoreState(defaultSnapshot);
             ResetViewsToFit();
             previewSheetRatio = null;
@@ -183,7 +189,7 @@ namespace SpriteSheetMaker
             projectPath = null;
             projectExtractDir = null;
             projectBaseline = CaptureState();
-            DeleteQuietly(oldDirectory);
+            ReleaseProjectDirectory(oldDirectory, oldLock);
             UpdateProjectTitle();
         }
 
@@ -211,6 +217,11 @@ namespace SpriteSheetMaker
 
         internal bool SaveProjectTo(string path)
         {
+            // 見つからない画像があるときは、上書きする前に確認する（含めずに保存すると、その画像はプロジェクトから無くなる）。
+            int missing = folders.SelectMany(f => f.Items).Count(item => !File.Exists(item.Path));
+            if (missing > 0 && PromptOnUnsavedChanges &&
+                !ShowDarkConfirm(Loc.T("dialog.saveMissingTitle"), Loc.T("message.saveMissing", missing), Loc.T("button.saveWithoutMissing")))
+                return false;
             ProjectDocument document = CaptureProjectDocument();
             ProjectSaveResult result;
             try
@@ -284,6 +295,8 @@ namespace SpriteSheetMaker
             }
 
             string oldDirectory = projectExtractDir;
+            FileStream oldLock = projectDirectoryLock;
+            projectDirectoryLock = LockProjectDirectory(extractDirectory);
             RestoreState(SnapshotFromDocument(loaded.Document));
             ResetViewsToFit();
             double ratio = loaded.Document.SheetPaneRatio;
@@ -293,7 +306,7 @@ namespace SpriteSheetMaker
             projectPath = path;
             projectExtractDir = extractDirectory;
             projectBaseline = CaptureState();
-            DeleteQuietly(oldDirectory);
+            ReleaseProjectDirectory(oldDirectory, oldLock);
             AddRecentProject(path);
             UpdateProjectTitle();
             statusLabel.Text = Loc.T("message.projectOpened", Path.GetFileName(path));
@@ -487,18 +500,73 @@ namespace SpriteSheetMaker
             return Path.Combine(Path.GetDirectoryName(Loc.SettingsPath), "projects");
         }
 
-        // 異常終了で残った古い展開フォルダを消す（別のウィンドウが使っていても壊さないよう2日以上前のものだけ）。
-        private static void DeleteStaleProjectFolders()
+        // 異常終了で残った古い展開フォルダを消す。2日以上前のもので、かつ他のウィンドウが使用中でないものだけ
+        // （更新日時だけでは、長く開いたままのプロジェクトの画像まで消してしまう）。
+        internal static void DeleteStaleProjectFolders()
         {
             try
             {
                 string root = ProjectsRoot();
                 if (!Directory.Exists(root)) return;
                 foreach (string directory in Directory.GetDirectories(root))
-                    if (Directory.GetLastWriteTimeUtc(directory) < DateTime.UtcNow.AddDays(-2)) DeleteQuietly(directory);
+                    if (Directory.GetLastWriteTimeUtc(directory) < DateTime.UtcNow.AddDays(-2) && !IsDirectoryInUse(directory))
+                        DeleteQuietly(directory);
             }
             catch (IOException) { }
             catch (UnauthorizedAccessException) { }
+        }
+
+        // 展開先に「使用中」の印を作り、開いたまま持つ（閉じると印は自動で消える）。
+        internal static FileStream LockProjectDirectory(string directory)
+        {
+            try
+            {
+                return new FileStream(Path.Combine(directory, DirectoryInUseFile), FileMode.Create, FileAccess.Write,
+                    FileShare.None, 1, FileOptions.DeleteOnClose);
+            }
+            catch (IOException) { return null; }
+            catch (UnauthorizedAccessException) { return null; }
+        }
+
+        // 印を他のプロセス（別のウィンドウ）が開いたままなら使用中。異常終了で残っただけの印は開けるので使用中ではない。
+        internal static bool IsDirectoryInUse(string directory)
+        {
+            string marker = Path.Combine(directory, DirectoryInUseFile);
+            if (!File.Exists(marker)) return false;
+            try
+            {
+                using (new FileStream(marker, FileMode.Open, FileAccess.ReadWrite, FileShare.None)) { }
+                return false;
+            }
+            catch (IOException) { return true; }
+            catch (UnauthorizedAccessException) { return true; }
+        }
+
+        // 使い終わった展開先を消す。書き出し中は、書き出しが画像を読み終えるまで先送りする。
+        private void ReleaseProjectDirectory(string directory, FileStream directoryLock)
+        {
+            if (string.IsNullOrEmpty(directory))
+            {
+                if (directoryLock != null) directoryLock.Dispose();
+                return;
+            }
+            if (exportBusy)
+            {
+                directoriesAfterExport.Add(new KeyValuePair<string, FileStream>(directory, directoryLock));
+                return;
+            }
+            if (directoryLock != null) directoryLock.Dispose();
+            DeleteQuietly(directory);
+        }
+
+        private void ReleaseDirectoriesAfterExport()
+        {
+            foreach (KeyValuePair<string, FileStream> pair in directoriesAfterExport)
+            {
+                if (pair.Value != null) pair.Value.Dispose();
+                DeleteQuietly(pair.Key);
+            }
+            directoriesAfterExport.Clear();
         }
 
         private static void DeleteQuietly(string directory)

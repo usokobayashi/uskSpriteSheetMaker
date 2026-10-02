@@ -70,6 +70,7 @@
     <Compile Include="FolderAddTests.cs" />
     <Compile Include="PageTransitionTests.cs" />
     <Compile Include="MotionTests.cs" />
+    <Compile Include="DetailFixTests.cs" />
   </ItemGroup>
 
   <ItemGroup>

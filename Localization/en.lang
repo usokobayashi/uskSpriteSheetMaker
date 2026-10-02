@@ -218,3 +218,6 @@ access.selectTab=Select
 filter.images=Image Files
 filter.formatImage={0} Image
 filter.animatedWebP=Animated WebP
+dialog.saveMissingTitle=Some Images Are Missing
+message.saveMissing={0} images are missing. Save without them?
+button.saveWithoutMissing=Save Without Them
