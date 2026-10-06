@@ -42,6 +42,16 @@
 
 当たり判定の大きさ（コライダー）は画像ピクセルで指定でき、プレビューに枠を表示できます。
 
+### マップチップ
+
+インポートした画像を自由に並び替えることができ、それを実際に配置してプレビューすることもできます。
+
+![マップチップを配置してプレビュー](docs/images/guide/map_tiles_preview.gif)
+
+![マップチップの並び替え](docs/images/guide/map_tiles_reorder.gif)
+
+![アニメーションチップの作成と配置](docs/images/guide/map_tiles_animation.gif)
+
 ### 保存・メモ・言語
 
 - 設定・画像・メモを `.smproj` ファイルにまとめて保存し、別のPCへ渡せます。[Releases](../../releases) にはサンプルプロジェクトもあります。
