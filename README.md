@@ -28,16 +28,6 @@
 - セル番号とグリッドを表示します。書き出す画像に番号を付けるかどうかも選べます。
 - PNG / TGAはシート全体、GIF / WebPは開始〜終了セルのアニメーションを書き出します。WebPは可逆圧縮で、色と半透明をそのまま保ちます。書き出しは `Esc` で中止できます。
 
-### マップチップ
-
-インポートした画像を自由に並び替えることができ、それを実際に配置してプレビューすることもできます。
-
-![マップチップを配置してプレビュー](docs/images/guide/map_tiles_preview.gif)
-
-![マップチップの並び替え](docs/images/guide/map_tiles_reorder.gif)
-
-![アニメーションチップの作成と配置](docs/images/guide/map_tiles_animation.gif)
-
 ### アニメーションのプレビュー
 
 | モード | 内容 |
@@ -51,6 +41,16 @@
 ![デバッグ用のプレビュー操作](docs/images/guide/debug.gif)
 
 当たり判定の大きさ（コライダー）は画像ピクセルで指定でき、プレビューに枠を表示できます。
+
+### マップチップ
+
+インポートした画像を自由に並び替えることができ、それを実際に配置してプレビューすることもできます。
+
+![マップチップを配置してプレビュー](docs/images/guide/map_tiles_preview.gif)
+
+![マップチップの並び替え](docs/images/guide/map_tiles_reorder.gif)
+
+![アニメーションチップの作成と配置](docs/images/guide/map_tiles_animation.gif)
 
 ### 保存・メモ・言語
 
