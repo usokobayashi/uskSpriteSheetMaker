@@ -24,6 +24,33 @@ namespace SpriteSheetMakerTests
             yield return new TestCase { Name = "Security_Project_JunkOnlyFailsAsFormatException", Action = Project_JunkOnlyFailsAsFormatException };
             yield return new TestCase { Name = "Security_Project_CopyBoundedStopsAtTheLimit", Action = Project_CopyBoundedStopsAtTheLimit };
             yield return new TestCase { Name = "Security_Image_DeclaredHugeSizeIsRefusedBeforeDecoding", Action = Image_DeclaredHugeSizeIsRefusedBeforeDecoding };
+            yield return new TestCase { Name = "Security_Map_HugeDeclaredChipSizesDoNotOverflow", Action = Map_HugeDeclaredChipSizesDoNotOverflow };
+        }
+
+        // マップの JSON に、最大の幅・高さのチップを大量に書いたファイル。並べる計算が桁あふれで落ちたり、
+        // メモリを使い切ったりせず、短い時間で終わる。
+        private static void Map_HugeDeclaredChipSizesDoNotOverflow()
+        {
+            var map = new MapDocument();
+            for (int i = 0; i < 3000; i++) map.Assets.Add(new MapAsset { Width = 32768, Height = 32768, Cell = i + 1 });
+            map.Rows = new List<List<string>> { map.Assets.Select(a => a.Id).ToList() };
+            MapDocument loaded = MapDocument.FromJson(map.ToJson());
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            Dictionary<string, Rectangle> packed = loaded.Pack(8);
+            Assert.IsTrue(clock.ElapsedMilliseconds < 5000, "packing finishes quickly");
+            Assert.AreEqual(3000, packed.Count, "every chip is placed");
+            Assert.IsTrue(packed.Values.All(r => r.X >= 0 && r.Y >= 0 && r.Right <= MapDocument.MaxRowWidth && r.Bottom > r.Y), "no overflowed coordinates");
+            Assert.IsTrue(loaded.RangeSize().Width > 0 && loaded.RangeSize().Height > 0, "the range size does not overflow");
+            Assert.IsTrue(MapDocument.NumbersOf(packed).Count == 3000, "numbers are assigned");
+            // 1つのアニメーションが上限より広い（幅32768のコマ35枚）。コマが重ならず、上限を超えない（Codex 監査 2026-10-06）。
+            var wide = new MapDocument();
+            for (int i = 0; i < 35; i++) wide.Assets.Add(new MapAsset { Width = 32768, Height = 1, Cell = i + 1 });
+            wide.Animations.Add(new MapAnimation { Id = "w", Frames = wide.Assets.Select(a => a.Id).ToList() });
+            Assert.IsFalse(wide.FitsInRow(wide.Assets.Select(a => a.Id)), "too wide to make");
+            Dictionary<string, Rectangle> wp = MapDocument.FromJson(wide.ToJson()).Pack(8);
+            var list = wp.Values.ToList();
+            for (int i = 0; i < list.Count; i++) for (int j = i + 1; j < list.Count; j++) Assert.IsFalse(list[i].IntersectsWith(list[j]), "frames do not overlap");
+            Assert.IsTrue(list.All(r => r.Right <= MapDocument.MaxRowWidth), "frames stay within the width limit");
         }
 
         private static string TempDir()
@@ -186,7 +213,10 @@ namespace SpriteSheetMakerTests
                     "{\"formatVersion\":1,\"folders\":[null]}", "{\"formatVersion\":1,\"folders\":[{\"images\":[null]}]}",
                     "{\"formatVersion\":99999999999999999999}", "{\"formatVersion\":1,\"columns\":1e999}",
                     new string('[', 20000), "{\"formatVersion\":1,\"memos\":[{\"x\":1e39,\"y\":-1e39,\"width\":-5,\"text\":null}]}",
-                    "{\"formatVersion\":1,\"folders\":[{\"name\":\"" + new string('a', 100000) + "\",\"images\":[{\"name\":\"" + new string('b', 100000) + "\"}]}]}"
+                    "{\"formatVersion\":1,\"folders\":[{\"name\":\"" + new string('a', 100000) + "\",\"images\":[{\"name\":\"" + new string('b', 100000) + "\"}]}]}",
+                    // マップの JSON が null・配列・中に null を含む（Codex 監査 2026-10-06）。
+                    "{\"formatVersion\":1,\"map\":\"null\"}", "{\"formatVersion\":1,\"map\":\"[]\"}", "{\"formatVersion\":1,\"map\":\"not json\"}",
+                    "{\"formatVersion\":1,\"map\":\"{\\\"Assets\\\":[null,{\\\"Id\\\":\\\"a\\\",\\\"Path\\\":null}],\\\"Rows\\\":[null,[null]],\\\"Animations\\\":[{\\\"Id\\\":\\\"x\\\",\\\"Frames\\\":null}],\\\"Tiles\\\":[null],\\\"BasisId\\\":null}\"}"
                 };
                 int index = 0;
                 foreach (string json in cases)
@@ -196,6 +226,7 @@ namespace SpriteSheetMakerTests
                     {
                         ProjectLoadResult r = ProjectFile.Load(path, Path.Combine(dir, "x" + index));
                         Assert.IsTrue(r.Document != null, "case " + index + " loaded with a document");
+                        if (!string.IsNullOrEmpty(r.Document.MapJson)) MapDocument.FromJson(r.Document.MapJson).Pack(8);   // 読めたマップは並べられる
                     }
                     catch (ProjectFormatException) { }
                     catch (IOException) { }   // 極端に長い名前でパスが作れない場合

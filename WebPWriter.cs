@@ -37,11 +37,18 @@ namespace SpriteSheetMaker
             Func<int, Bitmap> getFrame, bool disposeFrames, int delayMs,
             Action<double> progress, CancellationToken cancellationToken)
         {
+            SaveAnimatedWebP(path, width, height, frameCount, getFrame, disposeFrames, i => delayMs, progress, cancellationToken);
+        }
+
+        // コマごとに表示時間（ミリ秒）を変えられる形。
+        public static void SaveAnimatedWebP(string path, int width, int height, int frameCount,
+            Func<int, Bitmap> getFrame, bool disposeFrames, Func<int, int> delayMsOf,
+            Action<double> progress, CancellationToken cancellationToken)
+        {
             if (frameCount <= 0)
                 throw new ArgumentException("There are no WebP frames.", "frameCount");
             if (width <= 0 || height <= 0 || width > MaxDimension || height > MaxDimension)
                 throw new ArgumentOutOfRangeException("width", "The WebP size is out of range.");
-            int duration = Math.Max(1, Math.Min(MaxDurationMs, delayMs));
 
             SheetStreaming.WriteAtomically(path, fs =>
             {
@@ -80,7 +87,7 @@ namespace SpriteSheetMaker
                     Write24(anmf, 3, 0);            // Y / 2
                     Write24(anmf, 6, width - 1);
                     Write24(anmf, 9, height - 1);
-                    Write24(anmf, 12, duration);
+                    Write24(anmf, 12, Math.Max(1, Math.Min(MaxDurationMs, delayMsOf(i))));
                     anmf[15] = 0x02;                // 前のコマと合成せず置き換える・破棄しない
                     anmf[16] = (byte)'V'; anmf[17] = (byte)'P'; anmf[18] = (byte)'8'; anmf[19] = (byte)'L';
                     WriteLittleEndian(anmf, 20, bitstream.Length);

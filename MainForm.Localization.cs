@@ -18,6 +18,12 @@ namespace SpriteSheetMaker
         private List<Control> effectStatusItems = new List<Control>();
         private readonly ComboBox languageComboBox = new ComboBox();
         private readonly RoundedCheckBox axisNumbersCheckBox = new RoundedCheckBox();
+        // 座標表示（カーソルを置いたセルの位置の札）と UV座標形式。アプリの設定として保存する。
+        private readonly RoundedCheckBox coordinatesCheckBox = new RoundedCheckBox();
+        private readonly ComboBox uvFormatComboBox = new ComboBox();
+        private Control coordinatesRow, uvFormatGroup, blackTransparencyRow, hintsRow, align4Row;
+        // カーソルを置いたときに出るヒントを出すか（座標の札などが見づらくなるときに切る）。アプリの設定として保存する。
+        private readonly RoundedCheckBox hintsCheckBox = new RoundedCheckBox();
         private readonly RoundedCheckBox terrainCheckBox = new RoundedCheckBox();
         private readonly Terrain sampleTerrain = new Terrain(SimulationSceneSize);
         private readonly List<Action> localizedBindings = new List<Action>();
@@ -38,6 +44,44 @@ namespace SpriteSheetMaker
             Action apply = () => item.Text = Loc.T(key);
             localizedBindings.Add(apply);
             apply();
+        }
+
+        // 座標表示と UV座標形式を、すべてのシート（通常・キャラクター・エフェクト・マップチップ）へ反映する。
+        // ヒントを切ると、出ているものも消す。「？」の説明（HelpMark）は別の札なので、この設定によらず出る。
+        private void ApplyHintSetting()
+        {
+            bool enabled = hintsCheckBox.Checked;
+            toolTip.Active = enabled;
+            if (!enabled && mapCanvas != null) toolTip.Hide(mapCanvas);
+        }
+
+        private void ApplyCoordinateSettings()
+        {
+            var format = (UvCoordinateFormat)Math.Max(0, uvFormatComboBox.SelectedIndex);
+            sheetCanvas.ShowCoordinates = coordinatesCheckBox.Checked; sheetCanvas.UvFormat = format;
+            if (mapPalette != null) { mapPalette.ShowCoordinates = coordinatesCheckBox.Checked; mapPalette.UvFormat = format; mapPalette.Invalidate(); }
+            sheetCanvas.Invalidate();
+        }
+
+        private HelpMark NewHelpMark(string helpKey)
+        {
+            int size = ScaleDpi(18);
+            var mark = new HelpMark { Size = new Size(size, size) };
+            BindAction(() => mark.HelpText = Loc.T(helpKey));
+            return mark;
+        }
+
+        // 項目の左（left）か右に「？」を付けた入れ物を返す。項目の外側の余白は入れ物へ移す。
+        private FlowLayoutPanel WithHelp(Control item, string helpKey, bool left)
+        {
+            var host = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = false, Margin = item.Margin, Padding = Padding.Empty, BackColor = Color.Transparent };
+            item.Margin = Padding.Empty;
+            HelpMark mark = NewHelpMark(helpKey);
+            int top = Math.Max(0, (item.GetPreferredSize(Size.Empty).Height - mark.Height) / 2);
+            mark.Margin = left ? new Padding(0, top, ScaleDpi(6), 0) : new Padding(ScaleDpi(6), top, 0, 0);
+            if (left) { host.Controls.Add(mark); host.Controls.Add(item); }
+            else { host.Controls.Add(item); host.Controls.Add(mark); }
+            return host;
         }
 
         // 文言以外（ヒント・読み上げ名など）を言語に合わせて設定し、言語変更時にも再実行する。
@@ -106,6 +150,56 @@ namespace SpriteSheetMaker
                 sheetCanvas.ShowAxisNumbers = axisNumbersCheckBox.Checked;
                 CommitUndoableChange();
             };
+
+            BindText(coordinatesCheckBox, "check.coordinates");
+            coordinatesCheckBox.AutoSize = true;
+            coordinatesCheckBox.ForeColor = lightText;
+            coordinatesCheckBox.BackColor = Color.Transparent;
+            coordinatesCheckBox.Margin = new Padding(10, 4, 10, 4);
+            coordinatesCheckBox.Checked = CoordinateCard.ShowSetting;
+            coordinatesCheckBox.CheckedChanged += (s, e) => { CoordinateCard.ShowSetting = coordinatesCheckBox.Checked; ApplyCoordinateSettings(); };
+            coordinatesRow = WithHelp(coordinatesCheckBox, "help.coordinates", false);
+
+            uvFormatComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+            uvFormatComboBox.DrawMode = DrawMode.OwnerDrawFixed;
+            uvFormatComboBox.ItemHeight = 28;
+            uvFormatComboBox.FlatStyle = FlatStyle.Flat;
+            uvFormatComboBox.Size = new Size(200, 42);
+            uvFormatComboBox.DrawItem += ComboBox_DrawItem;
+            ApplyInputStyle(uvFormatComboBox);
+            BindAction(() =>
+            {
+                int selected = uvFormatComboBox.SelectedIndex < 0 ? (int)CoordinateCard.UvFormatSetting : uvFormatComboBox.SelectedIndex;
+                uvFormatComboBox.Items.Clear();
+                uvFormatComboBox.Items.Add(Loc.T("uv.directx"));
+                uvFormatComboBox.Items.Add(Loc.T("uv.opengl"));
+                uvFormatComboBox.SelectedIndex = selected;
+            });
+            uvFormatComboBox.SelectedIndexChanged += (s, e) =>
+            {
+                if (applyingLanguage || uvFormatComboBox.SelectedIndex < 0) return;
+                CoordinateCard.UvFormatSetting = (UvCoordinateFormat)uvFormatComboBox.SelectedIndex;
+                ApplyCoordinateSettings();
+            };
+            // 「？」は見出しの文字の右（入力欄の手前）に置く。
+            Label uvLabel = MakeLocalizedLabel("field.uvFormat");
+            FlowLayoutPanel uvGroup = CreateSettingsGroup(uvLabel, CreateComboHost(uvFormatComboBox, 200));
+            HelpMark uvHelp = NewHelpMark("help.uvFormat");
+            uvHelp.Margin = new Padding(0, Math.Max(0, (uvLabel.GetPreferredSize(Size.Empty).Height - uvHelp.Height) / 2) + uvLabel.Margin.Top, ScaleDpi(4), 0);
+            uvGroup.Controls.Add(uvHelp); uvGroup.Controls.SetChildIndex(uvHelp, 1);
+            uvFormatGroup = uvGroup;
+            ApplyCoordinateSettings();
+
+            BindText(hintsCheckBox, "check.hints");
+            hintsCheckBox.AutoSize = true;
+            hintsCheckBox.ForeColor = lightText;
+            hintsCheckBox.BackColor = Color.Transparent;
+            hintsCheckBox.Margin = new Padding(10, 4, 10, 4);
+            hintsCheckBox.Checked = HelpTipStyle.HintsEnabled;
+            hintsCheckBox.CheckedChanged += (s, e) => { HelpTipStyle.HintsEnabled = hintsCheckBox.Checked; ApplyHintSetting(); };
+            hintsRow = WithHelp(hintsCheckBox, "help.hints", false);
+            align4Row = WithHelp(align4CheckBox, "help.align4", false);   // 書き出しの幅・高さを4の倍数に（ツールバーが狭いため設定に置く）
+            ApplyHintSetting();
 
             // 見本地形（スロープ・直角の崖・すり抜けられる足場）を使うか。切ると従来の平らな床（上下キーで奥行き移動）。
             BindText(terrainCheckBox, "check.terrain");
@@ -187,15 +281,15 @@ namespace SpriteSheetMaker
 
             var ordered = new List<Control>
             {
-                basicSettingsHeader, unifiedFpsGroup, backgroundPaletteGroup, languageGroup, axisNumbersCheckBox, updateCheckBox,
-                processingSettingsHeader, blackTransparencyCheckBox, colorAdjustmentGroup
+                basicSettingsHeader, unifiedFpsGroup, backgroundPaletteGroup, languageGroup, axisNumbersCheckBox, coordinatesRow, uvFormatGroup, hintsRow, align4Row, updateCheckBox,
+                processingSettingsHeader, blackTransparencyRow, colorAdjustmentGroup
             };
             if (statusHeader != null) ordered.Add(statusHeader);
             ordered.AddRange(own.Where(c => !ordered.Contains(c)));
 
             var breakAfter = new HashSet<Control>
             {
-                basicSettingsHeader, backgroundPaletteGroup, languageGroup, axisNumbersCheckBox, updateCheckBox,
+                basicSettingsHeader, backgroundPaletteGroup, languageGroup, axisNumbersCheckBox, coordinatesRow, uvFormatGroup, hintsRow, align4Row, updateCheckBox,
                 processingSettingsHeader, colorAdjustmentGroup
             };
             if (statusHeader != null) breakAfter.Add(statusHeader);

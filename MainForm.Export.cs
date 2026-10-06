@@ -25,6 +25,19 @@ namespace SpriteSheetMaker
         private int lastExportProgressTick;
 
         // 書き出しの設定を、その時点の画面の状態からまとめて控える。書き出し中に画面を操作しても影響しない。
+        // 書き出す画像の幅・高さを4の倍数にそろえるか（DirectX などのブロック圧縮は4×4画素単位のため）。
+        // アプリの設定として保存する（既定はオフ）。右と下に透明な余白を足すだけで、チップの位置は変えない。
+        internal static class SheetSizeRule
+        {
+            public const string SettingKey = "alignSize4";
+            public static bool Align4
+            {
+                get { return AppSettings.Get(SettingKey) == "1"; }
+                set { AppSettings.Set(SettingKey, value ? "1" : "0"); }
+            }
+            public static int Round(int value, bool align4) { return align4 ? (value + 3) / 4 * 4 : value; }
+        }
+
         private sealed class ExportSnapshot
         {
             public List<LoadFolderRequest> Request;
@@ -35,9 +48,11 @@ namespace SpriteSheetMaker
             public int Fps;
             public bool ConvertBlack;
             public bool Numbers;
+            public bool Align4;
             public SpriteColorBlendMode BlendMode;
             public Color AdjustmentColor;
             public int AdjustmentStrength;
+            public MapDocument Map;
         }
 
         private ExportSnapshot CaptureExportSnapshot()
@@ -52,15 +67,39 @@ namespace SpriteSheetMaker
                 Fps = Math.Max(1, (int)fpsBox.Value),
                 ConvertBlack = blackTransparencyCheckBox.Checked,
                 Numbers = gridNumberCheckBox.Checked,
+                Align4 = align4CheckBox.Checked,
                 BlendMode = colorBlendMode,
                 AdjustmentColor = spriteAdjustmentColor,
-                AdjustmentStrength = spriteAdjustmentStrength
+                AdjustmentStrength = spriteAdjustmentStrength,
+                Map = previewTargetMode == PreviewTargetMode.Map ? MapDocument.FromJson(CaptureMap()) : null
             };
         }
 
         private SheetLayout BuildExportLayout(ExportSnapshot snapshot)
         {
-            return BuildLayout(imagePipeline.LoadSizes(snapshot.Request, snapshot.Divisor), snapshot.Columns);
+            if (snapshot.Map != null)
+            {
+                MapDocument map = MapDocument.FromJson(snapshot.Map.ToJson());
+                foreach (MapAsset a in map.Assets)
+                { Size size = a.Size; a.Width = Math.Max(1, size.Width / snapshot.Divisor); a.Height = Math.Max(1, size.Height / snapshot.Divisor); a.CorrectedWidth = a.CorrectedHeight = 0; }
+                map.CellWidth = Math.Max(1, map.CellWidth / snapshot.Divisor);
+                var packed = map.Pack(snapshot.Columns);
+                Dictionary<string, int> numbers = map.SheetNumbers(snapshot.Columns);
+                var layout = new SheetLayout();
+                foreach (var entry in packed)
+                {
+                    MapAsset a = map.Asset(entry.Key); Rectangle r = entry.Value;
+                    layout.Placements.Add(new FramePlacement { Source = new ImageItem { Path = a.Path }, Rect = r, CellRect = r, CellNumber = numbers[a.Id] });
+                    layout.Cells.Add(new LayoutCell { Rect = r, CellNumber = numbers[a.Id] });
+                    layout.Width = Math.Max(layout.Width, r.Right); layout.Height = Math.Max(layout.Height, r.Bottom);
+                }
+                layout.Width = SheetSizeRule.Round(Math.Max(1, layout.Width), snapshot.Align4); layout.Height = SheetSizeRule.Round(Math.Max(1, layout.Height), snapshot.Align4);
+                // 通常のシートと同じく、座標が int に収まらない大きさは書き出さない（壊れた・悪意のあるファイル対策）。
+                if (layout.Width > int.MaxValue / 8 || layout.Height > int.MaxValue / 8)
+                    throw new InvalidOperationException(Loc.T("error.layoutTooLarge", layout.Width, layout.Height));
+                return layout;
+            }
+            return BuildLayout(imagePipeline.LoadSizes(snapshot.Request, snapshot.Divisor), snapshot.Columns, snapshot.Align4);
         }
 
         private static Bitmap LoadPlacementBitmap(FramePlacement placement, ExportSnapshot snapshot, CancellationToken cancellationToken)
@@ -92,7 +131,8 @@ namespace SpriteSheetMaker
                         cancellationToken.ThrowIfCancellationRequested();
                         FramePlacement current = placement;
                         Bitmap bitmap = placement.Bitmap ?? cache.Get(i, () => LoadPlacementBitmap(current, snapshot, cancellationToken));
-                        g.DrawImageUnscaled(bitmap, placement.Rect.X, placement.Rect.Y);
+                        if (snapshot.Map != null) g.DrawImage(bitmap, placement.Rect, 0, 0, bitmap.Width, bitmap.Height, GraphicsUnit.Pixel);
+                        else g.DrawImageUnscaled(bitmap, placement.Rect.X, placement.Rect.Y);
                     }
 
                     if (snapshot.Numbers)
@@ -130,6 +170,8 @@ namespace SpriteSheetMaker
         private void ExportAnimationFile(ImageOutputFormat format, string path, ExportSnapshot snapshot,
             Action<double> progress, CancellationToken cancellationToken)
         {
+            // マップチップのときは、配置したマップを1ループ分の動きとして書き出す。
+            if (snapshot.Map != null) { ExportMapLoop(format, path, snapshot, progress, cancellationToken); return; }
             SheetLayout layout = BuildExportLayout(snapshot);
             var selected = layout.Placements
                 .Where(p => p.CellNumber >= snapshot.StartCell && p.CellNumber <= snapshot.EndCell)
@@ -158,7 +200,8 @@ namespace SpriteSheetMaker
                         g.Clear(Color.Transparent);
                         g.InterpolationMode = InterpolationMode.NearestNeighbor;
                         g.PixelOffsetMode = PixelOffsetMode.Half;
-                        g.DrawImageUnscaled(source, 0, 0);
+                        if (snapshot.Map != null) g.DrawImage(source, new Rectangle(0, 0, placement.Rect.Width, placement.Rect.Height), 0, 0, source.Width, source.Height, GraphicsUnit.Pixel);
+                        else g.DrawImageUnscaled(source, 0, 0);
                         if (snapshot.Numbers)
                         {
                             DrawGridNumbers(g, new List<LayoutCell>
@@ -181,6 +224,112 @@ namespace SpriteSheetMaker
                 WebPWriter.SaveAnimatedWebP(path, frameWidth, frameHeight, selected.Count, getFrame, true, delayMs, progress, cancellationToken);
             else
                 GifWriter.SaveAnimatedGif(path, frameWidth, frameHeight, selected.Count, getFrame, true, delayMs, progress, cancellationToken);
+        }
+
+        // マップ全体の1ループ。各アニメーションのループが同時に最初へ戻るまでを1ループとし、
+        // どれかのコマが切り替わる時刻だけをコマにして、それぞれの表示時間を正確に付ける。
+        internal const int MaxMapLoopFrames = 1200;
+        internal static List<double> MapLoopTimes(MapDocument map)
+        {
+            List<MapAnimation> clips = map.Animations
+                .Where(a => a.Frames.Count > 0 && map.Tiles.Any(t => t.Animated && t.Source == a.Id && map.VisibleLayers[t.Layer])).ToList();
+            var times = new List<double> { 0 };
+            if (clips.Count == 0) return times;
+            // 1秒を ticks 等分した目盛りで数える（全 FPS の最小公倍数）。
+            long ticks = clips.Select(c => (long)Math.Max(1, c.Fps)).Aggregate(1L, Lcm);
+            long loop = clips.Select(c => ticks / Math.Max(1, c.Fps) * c.Frames.Count).Aggregate(1L, Lcm);
+            var events = new SortedSet<long> { 0 };
+            foreach (MapAnimation clip in clips)
+            {
+                long step = ticks / Math.Max(1, clip.Fps);
+                for (long tick = step; tick < loop; tick += step)
+                {
+                    events.Add(tick);
+                    if (events.Count > MaxMapLoopFrames) throw new InvalidOperationException(Loc.T("error.mapLoopTooLong", MaxMapLoopFrames));
+                }
+            }
+            times = events.Select(e => e / (double)ticks).ToList();
+            times.Add(loop / (double)ticks);   // 最後の要素はループの終わり（コマではない）
+            return times;
+        }
+        private static long Gcd(long a, long b) { while (b != 0) { long r = a % b; a = b; b = r; } return Math.Max(1, a); }
+        private static long Lcm(long a, long b) { return a / Gcd(a, b) * b; }
+
+        private void ExportMapLoop(ImageOutputFormat format, string path, ExportSnapshot snapshot,
+            Action<double> progress, CancellationToken cancellationToken)
+        {
+            MapDocument map = snapshot.Map;
+            int divisor = Math.Max(1, snapshot.Divisor);
+            int cellW = Math.Max(1, map.CellWidth / divisor), cellH = Math.Max(1, map.CellHeight / divisor);
+            int width = cellW * MapDocument.Extent, height = cellH * MapDocument.Extent;
+            if (format == ImageOutputFormat.Gif && (width > ushort.MaxValue || height > ushort.MaxValue))
+                throw new InvalidOperationException(Loc.T("error.gifTooLarge", width, height));
+            if (format == ImageOutputFormat.WebP && (width > WebPWriter.MaxDimension || height > WebPWriter.MaxDimension))
+                throw new InvalidOperationException(Loc.T("error.webpTooLarge", width, height));
+            List<double> times = MapLoopTimes(map);
+            int frameCount = Math.Max(1, times.Count - 1);
+            if (times.Count == 1) times.Add(1.0);   // 動きがなければ1コマ（1秒）
+            // 表示時間は、時刻を形式の単位（GIF 1/100秒、WebP 1/1000秒）で丸めた差にして、ずれを積み上げない。
+            double unit = format == ImageOutputFormat.Gif ? 100 : 1000;
+            // 単位に丸めると同じ時刻になる切り替わりは1コマにまとめる（0秒のコマを作らない）。
+            times = times.Where((t, i) => i == 0 || Math.Round(t * unit) > Math.Round(times[i - 1] * unit)).ToList();
+            frameCount = Math.Max(1, times.Count - 1);
+            Func<int, int> delayMsOf = i => (int)((Math.Round(times[i + 1] * unit) - Math.Round(times[i] * unit)) * (1000 / unit));
+
+            var images = new Dictionary<string, Bitmap>();
+            try
+            {
+                Func<string, Bitmap> imageOf = id =>
+                {
+                    Bitmap image;
+                    if (images.TryGetValue(id, out image)) return image;
+                    MapAsset asset = map.Asset(id);
+                    image = asset == null || string.IsNullOrEmpty(asset.Path) || !File.Exists(asset.Path) ? null
+                        : SpriteImagePipeline.LoadOne(asset.Path, 1, snapshot.ConvertBlack, snapshot.BlendMode, snapshot.AdjustmentColor, snapshot.AdjustmentStrength, cancellationToken);
+                    images[id] = image; return image;
+                };
+                Func<int, Bitmap> getFrame = index =>
+                {
+                    var frame = new Bitmap(width, height, PixelFormat.Format32bppArgb);
+                    try
+                    {
+                        using (Graphics g = Graphics.FromImage(frame))
+                        {
+                            g.Clear(Color.Transparent);
+                            g.InterpolationMode = InterpolationMode.NearestNeighbor;
+                            g.PixelOffsetMode = PixelOffsetMode.Half;
+                            // 画面と同じく、時刻は区間の始まり＋少しで決める（境目の丸め誤差を避ける）。
+                            double time = times[index] + 1e-6;
+                            foreach (MapPlacement tile in map.Tiles.Where(t => map.VisibleLayers[t.Layer]).OrderBy(t => t.Layer))
+                            {
+                                cancellationToken.ThrowIfCancellationRequested();
+                                string id = map.FrameId(tile.Source, tile.Animated, time);
+                                MapAsset asset = map.Asset(id); Bitmap image = imageOf(id);
+                                if (asset == null || image == null) continue;
+                                // 回転（90°単位）と左右反転を、画面と同じ順（反転 → 回転）で掛ける。
+                                int w = Math.Max(1, asset.Size.Width / divisor), h = Math.Max(1, asset.Size.Height / divisor);
+                                int footW = tile.Rotation % 2 == 1 ? h : w, footH = tile.Rotation % 2 == 1 ? w : h;
+                                GraphicsState state = g.Save();
+                                g.TranslateTransform(tile.X * cellW + footW / 2f, tile.Y * cellH + footH / 2f);
+                                g.RotateTransform(90 * tile.Rotation);
+                                if (tile.FlipX || tile.FlipY) g.ScaleTransform(tile.FlipX ? -1 : 1, tile.FlipY ? -1 : 1);
+                                g.DrawImage(image, new RectangleF(-w / 2f, -h / 2f, w, h), new RectangleF(0, 0, image.Width, image.Height), GraphicsUnit.Pixel);
+                                g.Restore(state);
+                            }
+                        }
+                        return frame;
+                    }
+                    catch { frame.Dispose(); throw; }
+                };
+                if (format == ImageOutputFormat.WebP)
+                    WebPWriter.SaveAnimatedWebP(path, width, height, frameCount, getFrame, true, delayMsOf, progress, cancellationToken);
+                else
+                    GifWriter.SaveAnimatedGif(path, width, height, frameCount, getFrame, true, delayMsOf, progress, cancellationToken);
+            }
+            finally
+            {
+                foreach (Bitmap image in images.Values) if (image != null) image.Dispose();
+            }
         }
 
         private void ExportGifFile(string path, ExportSnapshot snapshot, Action<double> progress, CancellationToken cancellationToken)

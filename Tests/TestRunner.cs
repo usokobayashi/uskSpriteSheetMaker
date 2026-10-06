@@ -44,8 +44,33 @@ namespace SpriteSheetMakerTests
         public static int RunAll(IList<TestCase> cases)
         {
             int failed = 0;
+            // 調査用: TEST_WATCHDOG=1 のとき、1件が90秒を超えたら実行中の場所（呼び出し履歴）を出す。
+            System.Threading.Thread main = System.Threading.Thread.CurrentThread;
+            string current = null; var started = System.Diagnostics.Stopwatch.StartNew(); bool dumped = false;
+            if (Environment.GetEnvironmentVariable("TEST_WATCHDOG") == "1")
+            {
+                var watch = new System.Threading.Thread(() =>
+                {
+                    while (true)
+                    {
+                        System.Threading.Thread.Sleep(5000);
+                        if (current != null && !dumped && started.Elapsed.TotalSeconds > 90)
+                        {
+                            dumped = true;
+#pragma warning disable 618
+                            try { main.Suspend(); Console.WriteLine("WATCHDOG " + current + Environment.NewLine + new System.Diagnostics.StackTrace(main, true)); }
+                            catch (Exception ex) { Console.WriteLine("WATCHDOG failed " + ex.Message); }
+                            finally { try { main.Resume(); } catch { } }
+#pragma warning restore 618
+                            Console.Out.Flush();
+                        }
+                    }
+                }) { IsBackground = true };
+                watch.Start();
+            }
             foreach (TestCase test in cases)
             {
+                current = test.Name; started.Restart(); dumped = false;
                 try
                 {
                     test.Action();

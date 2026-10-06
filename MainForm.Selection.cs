@@ -35,7 +35,7 @@ namespace SpriteSheetMaker
             };
             sheetCanvas.CellGesture += SheetCanvas_CellGesture;
             // ツリー側の選択が変わったら、シートの強調も更新する。
-            treeView.Invalidated += (s, e) => sheetCanvas.Invalidate();
+            treeView.Invalidated += (s, e) => { if (!treeView.InVisualRefresh) sheetCanvas.Invalidate(); };   // スクロールや開閉の動きでは描き直さない
 
             sheetContextMenu.Renderer = new ToolStripProfessionalRenderer(new DarkMenuColorTable());
             sheetContextMenu.ShowImageMargin = false;
@@ -54,6 +54,7 @@ namespace SpriteSheetMaker
             foreach (FramePlacement placement in layout.Placements)
                 if (placement.Source != null) cellItems[placement.CellNumber] = placement.Source;
             if (selectionAnchorCell != 0 && !cellItems.ContainsKey(selectionAnchorCell)) selectionAnchorCell = 0;
+            SyncMapAssets();
         }
 
         //--------------
@@ -287,9 +288,9 @@ namespace SpriteSheetMaker
         private void BeginAssignMode()
         {
             List<int> cells = GetSelectedCellNumbers();
-            if (assignMode || cells.Count == 0 || previewWorkspacePage != PreviewWorkspacePage.StateTransitions) return;
-            assignFirstCell = cells[0];
-            assignLastCell = cells[cells.Count - 1];
+            bool map = previewTargetMode == PreviewTargetMode.Map && mapPalette != null;
+            if (assignMode || (map ? mapPalette.SelectedSet.Count == 0 : cells.Count == 0) || previewWorkspacePage != PreviewWorkspacePage.StateTransitions) return;
+            if (!map) { assignFirstCell = cells[0]; assignLastCell = cells[cells.Count - 1]; }
             assignMode = true;
             previewInput.Clear();
 
@@ -360,7 +361,16 @@ namespace SpriteSheetMaker
         private List<Rectangle> GetAssignHoles()
         {
             var holes = new List<Rectangle>();
-            if (previewTargetMode == PreviewTargetMode.Player)
+            if (previewTargetMode == PreviewTargetMode.Map)
+            {
+                Rectangle viewport = mapSettings.RectangleToScreen(mapSettings.ClientRectangle);
+                foreach (Control row in MapAssignRows())
+                {
+                    Rectangle rect = Rectangle.Intersect(row.RectangleToScreen(row.ClientRectangle), viewport);
+                    if (rect.Height >= 16 && rect.Width > 16) holes.Add(rect);
+                }
+            }
+            else if (previewTargetMode == PreviewTargetMode.Player)
             {
                 Rectangle viewport = playerTransitionList.RectangleToScreen(playerTransitionList.ClientRectangle);
                 foreach (StateRangeEditorControls editor in stateRangeEditors.Values)
@@ -391,6 +401,7 @@ namespace SpriteSheetMaker
 
         private Control GetAssignArea()
         {
+            if (previewTargetMode == PreviewTargetMode.Map && mapSettings != null) return mapSettings;
             return previewTargetMode == PreviewTargetMode.Player ? (Control)playerTransitionList
                 : previewTargetMode == PreviewTargetMode.Effect ? effectSettingsRow : standardSettingsRow;
         }
@@ -410,6 +421,19 @@ namespace SpriteSheetMaker
         // 状態の行（名前〜キー割り当てボタンの範囲）の左クリックで、その状態の開始〜終了へ選択範囲を設定する。
         private bool TryAssignAt(Point screenPoint)
         {
+            if (previewTargetMode == PreviewTargetMode.Map)
+            {
+                // アニメーションの行ならそのコマに、「＋ 追加」の行なら新しいアニメーションにする。
+                if (!mapSettings.RectangleToScreen(mapSettings.ClientRectangle).Contains(screenPoint)) return false;
+                foreach (Control row in MapAssignRows().ToList())
+                    if (row.RectangleToScreen(row.ClientRectangle).Contains(screenPoint))
+                    {
+                        AssignSelectionToAnimation(row.Tag as MapAnimation);
+                        EndAssignMode();
+                        return true;
+                    }
+                return false;
+            }
             if (previewTargetMode == PreviewTargetMode.Player)
             {
                 foreach (KeyValuePair<PlayerAnimationState, StateRangeEditorControls> pair in stateRangeEditors)

@@ -48,7 +48,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="Program.cs" />
+    <Compile Include="Program.cs" /><Compile Include="MapTests.cs" /><Compile Include="MapLayerDemo.cs" /><Compile Include="LargeExportTests.cs" /><Compile Include="PerfProbe.cs" />
     <Compile Include="TestRunner.cs" />
     <Compile Include="GifWriterTests.cs" />
     <Compile Include="ApngWriterTests.cs" />

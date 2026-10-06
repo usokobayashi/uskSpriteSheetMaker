@@ -225,24 +225,75 @@ namespace SpriteSheetMakerTests
             Directory.CreateDirectory(dir);
             try
             {
-                for (int i = 1; i <= 4; i++)
+                for (int i = 1; i <= 20; i++)
                     using (var bmp = new Bitmap(4, 4)) bmp.Save(Path.Combine(dir, "a" + i + ".png"), ImageFormat.Png);
                 using (MainForm form = ShownMainForm())
                 {
                     typeof(MainForm).GetMethod("AddDirectoryFolder", Flags).Invoke(form, new object[] { dir });
                     typeof(MainForm).GetMethod("UpdateTree", Flags).Invoke(form, null);
                     Pump(20);
-                    var tree = Field<TreeView>(form, "treeView");
-                    TreeNode folder = tree.Nodes[0];
+                    var tree = Field<FolderTreeView>(form, "treeView");
+                    FolderNode folder = tree.Nodes[0];
                     Assert.IsTrue(folder.IsExpanded, "a new folder starts open");
+                    Assert.AreEqual(1f, tree.OpennessOf(folder), "a new folder appears open at once");
 
+                    // 閉じると、中の行が途中の開き具合を通って隠れる（覆いの画像は使わない）。
                     folder.Collapse();
-                    Assert.IsTrue(Field<object>(form, "treeAccordion") != null, "collapsing slides the rows up");
-                    Assert.IsTrue(WaitUntil(() => Field<object>(form, "treeAccordion") == null, 600), "the collapse motion ends");
+                    Assert.IsTrue(tree.OpennessOf(folder) > 0.5f, "collapsing starts from open");
+                    Assert.IsTrue(WaitUntil(() => tree.OpennessOf(folder) == 0f, 600), "the collapse motion ends");
+                    Assert.IsTrue(folder.Nodes[0].Bounds.IsEmpty, "closed rows have no place");
+                    Assert.IsTrue(tree.GetNodeAt(10, tree.ItemHeight + 5) == null || tree.GetNodeAt(10, tree.ItemHeight + 5).Parent == null, "nothing under a closed folder");
                     folder.Expand();
-                    Assert.IsTrue(Field<object>(form, "treeAccordion") != null, "expanding slides the rows down");
-                    Assert.IsTrue(WaitUntil(() => Field<object>(form, "treeAccordion") == null, 600), "the expand motion ends");
-                    foreach (Control c in tree.Controls) Assert.IsFalse(c is TreeAccordionOverlay, "nothing is left over the tree");
+                    Assert.IsTrue(tree.OpennessOf(folder) < 0.5f, "expanding starts from closed");
+                    Assert.IsTrue(WaitUntil(() => tree.OpennessOf(folder) == 1f, 600), "the expand motion ends");
+                    Assert.IsTrue(ReferenceEquals(folder.Nodes[0], tree.GetNodeAt(10, tree.ItemHeight + 5)), "the first image row is under the folder");
+                    Assert.AreEqual(0, tree.Controls.Count, "nothing is laid over the list");
+
+                    // 途中で開閉し直すと、今の開き具合から戻る（跳ばない）。
+                    folder.Collapse();
+                    Pump(60);
+                    float mid = tree.OpennessOf(folder);
+                    folder.Expand();
+                    Assert.IsTrue(Math.Abs(tree.OpennessOf(folder) - mid) < 0.15f, "a reversed toggle continues from where it was");
+                    Assert.IsTrue(WaitUntil(() => tree.OpennessOf(folder) == 1f, 600), "and ends open");
+
+                    // ホイールのスクロールは、1px 単位で途中を通って目標へ近づく。
+                    typeof(Control).GetMethod("OnMouseWheel", Flags).Invoke(tree, new object[] { new MouseEventArgs(MouseButtons.None, 0, 10, 10, -120) });
+                    var offsets = new System.Collections.Generic.List<int>();
+                    WaitUntil(() => { offsets.Add(tree.ScrollOffset); return tree.ScrollOffset == tree.ItemHeight * 2; }, 600);
+                    Assert.AreEqual(tree.ItemHeight * 2, tree.ScrollOffset, "one wheel notch scrolls two rows");
+                    Assert.IsTrue(offsets.Exists(o => o > 0 && o < tree.ItemHeight * 2 && o % tree.ItemHeight != 0), "the scroll passes through in-between pixels");
+
+                    // 監査 P2: 子の画像を選んでから親を閉じると、隠れた画像は選択から外れ、フォルダが選ばれる（Delete の対象が見た目と一致する）。
+                    object images = Field<object>(form, "selectedImages");
+                    object chosenFolders = Field<object>(form, "selectedFolders");
+                    Func<object, object, bool> has = (set, item) => (bool)set.GetType().GetMethod("Contains").Invoke(set, new[] { item });
+                    Func<object, int> count = set => (int)set.GetType().GetProperty("Count").GetValue(set, null);
+                    typeof(MainForm).GetMethod("TreeView_NodeMouseClick", Flags).Invoke(form, new object[] { tree, new FolderNodeMouseEventArgs(folder.Nodes[0], MouseButtons.Left, 30, 30) });
+                    Assert.IsTrue(has(images, folder.Nodes[0].Tag), "an image row is selected");
+                    folder.Collapse();
+                    Assert.AreEqual(0, count(images), "hidden images leave the selection");
+                    Assert.IsTrue(has(chosenFolders, folder.Tag), "the closed folder takes the selection");
+                    Assert.IsTrue(ReferenceEquals(tree.SelectedNode, folder), "the list marks the folder");
+                    folder.Expand();
+                    Assert.IsTrue(WaitUntil(() => tree.OpennessOf(folder) == 1f, 600), "opens again");
+
+                    // 監査 P2: つまみのドラッグ中にマウスの取り込みを奪われたら、ドラッグを終える（ボタンなしの移動でスクロールしない）。
+                    Rectangle thumb = (Rectangle)typeof(FolderTreeView).GetMethod("ThumbBounds", Flags).Invoke(tree, null);
+                    Assert.IsFalse(thumb.IsEmpty, "the list can scroll");
+                    Point grab = new Point(thumb.X + thumb.Width / 2, thumb.Y + thumb.Height / 2);
+                    typeof(Control).GetMethod("OnMouseDown", Flags).Invoke(tree, new object[] { new MouseEventArgs(MouseButtons.Left, 1, grab.X, grab.Y, 0) });
+                    Assert.IsTrue((bool)typeof(FolderTreeView).GetField("dragThumb", Flags).GetValue(tree), "the thumb is grabbed");
+                    tree.Capture = false;
+                    Assert.IsFalse((bool)typeof(FolderTreeView).GetField("dragThumb", Flags).GetValue(tree), "losing the capture ends the thumb drag");
+                    int before = tree.ScrollOffset;
+                    typeof(Control).GetMethod("OnMouseMove", Flags).Invoke(tree, new object[] { new MouseEventArgs(MouseButtons.None, 0, grab.X, grab.Y + 60, 0) });
+                    Assert.AreEqual(before, tree.ScrollOffset, "a button-free move does not scroll");
+                    // 取り込みが残っていても、ボタンが離れた移動ならドラッグを終える。
+                    typeof(Control).GetMethod("OnMouseDown", Flags).Invoke(tree, new object[] { new MouseEventArgs(MouseButtons.Left, 1, grab.X, grab.Y, 0) });
+                    typeof(Control).GetMethod("OnMouseMove", Flags).Invoke(tree, new object[] { new MouseEventArgs(MouseButtons.None, 0, grab.X, grab.Y + 60, 0) });
+                    Assert.IsFalse((bool)typeof(FolderTreeView).GetField("dragThumb", Flags).GetValue(tree), "a button-free move ends the thumb drag");
+                    Assert.AreEqual(before, tree.ScrollOffset, "and does not scroll");
                 }
             }
             finally

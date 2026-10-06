@@ -138,76 +138,83 @@ namespace SpriteSheetMaker
 namespace SpriteSheetMaker
 {
     //==================================================
-    // TreeAccordionOverlay
-    // フォルダの開閉で、中身が上から伸びる（閉じるときは縮む）ように見せる覆い。
-    // 開閉の前後をツリーの画像にして、フォルダの行より下だけを動かす。
+    // CrossfadeOverlay
+    // 中身が大きく入れ替わる切り替え（モード・プロジェクト）で、切り替え前の絵で覆い、
+    // 切り替え後の絵へ溶け込ませてから外す。下のコントロールが1つずつ描かれる様子（がたつき・ちらつき）を見せない。
     //==================================================
-    internal sealed class TreeAccordionOverlay : Control
+    internal sealed class CrossfadeOverlay : Control
     {
-        private readonly Bitmap before;
-        private readonly Bitmap after;
-        private readonly int splitY;        // 開閉したフォルダの行の下端（ここより下が動く）
-        private readonly int revealHeight;  // 子の行の高さの合計（見えている範囲まで）
-        private readonly bool expanding;
-        private readonly int durationMs;
-        private readonly System.Diagnostics.Stopwatch clock = System.Diagnostics.Stopwatch.StartNew();
+        private readonly Bitmap from;
+        private Bitmap to;
+        private int durationMs = 1;
+        private readonly System.Diagnostics.Stopwatch clock = new System.Diagnostics.Stopwatch();
+        private readonly System.Diagnostics.Stopwatch sinceCreated = System.Diagnostics.Stopwatch.StartNew();
         private readonly System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer { Interval = 15 };
         private bool finished;
+        private const int WM_SETREDRAW = 0x000B;
+        private const uint RDW_INVALIDATE = 0x0001, RDW_ERASE = 0x0004, RDW_ALLCHILDREN = 0x0080, RDW_UPDATENOW = 0x0100;
+        [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+        [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool RedrawWindow(IntPtr hWnd, IntPtr rect, IntPtr region, uint flags);
 
-        public TreeAccordionOverlay(Bitmap before, Bitmap after, int splitY, int revealHeight, bool expanding, int durationMs)
+        public CrossfadeOverlay(Bitmap from)
         {
-            this.before = before;
-            this.after = after;
-            this.splitY = splitY;
-            this.revealHeight = revealHeight;
-            this.expanding = expanding;
-            this.durationMs = Math.Max(1, durationMs);
-            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
-                ControlStyles.OptimizedDoubleBuffer | ControlStyles.Opaque, true);
+            this.from = from;
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.Opaque, true);
             TabStop = false;
             timer.Tick += (s, e) =>
             {
-                if (clock.ElapsedMilliseconds >= this.durationMs) Finish();
+                // 描かれないまま時間が過ぎたとき（最小化中など）も必ず外す。
+                if ((clock.IsRunning && clock.ElapsedMilliseconds >= durationMs) || sinceCreated.ElapsedMilliseconds >= durationMs * 3 + 2000) Finish();
                 else Invalidate();
             };
             timer.Start();
         }
 
+        public void Begin(Bitmap after, int milliseconds)
+        {
+            to = after; durationMs = Math.Max(1, milliseconds);
+            sinceCreated.Restart(); Invalidate();
+        }
+
         public void Finish()
         {
             if (finished) return;
-            finished = true;
-            timer.Stop();
+            finished = true; timer.Stop();
             Control parent = Parent;
-            if (parent != null) parent.Controls.Remove(this);
+            if (parent != null)
+            {
+                bool freeze = parent.IsHandleCreated && parent.Visible;
+                if (freeze) SendMessage(parent.Handle, WM_SETREDRAW, IntPtr.Zero, IntPtr.Zero);
+                try { parent.Controls.Remove(this); }
+                finally
+                {
+                    if (freeze)
+                    {
+                        SendMessage(parent.Handle, WM_SETREDRAW, new IntPtr(1), IntPtr.Zero);
+                        RedrawWindow(parent.Handle, IntPtr.Zero, IntPtr.Zero, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
+                    }
+                }
+            }
             Dispose();
         }
 
         protected override void OnPaint(PaintEventArgs e)
         {
-            float progress = PageTransitionOverlay.Ease(clock.ElapsedMilliseconds / (float)durationMs);
-            int shown = (int)Math.Round(revealHeight * (expanding ? progress : 1f - progress));
-            Bitmap open = expanding ? after : before;      // 子が見えている方
-            Bitmap closed = expanding ? before : after;    // 子が隠れている方
             Graphics g = e.Graphics;
-            g.Clear(BackColor);
-            // フォルダの行まではそのまま、子の行は上から shown だけ見せ、その下に残りの行を続ける。
-            g.DrawImage(open, new Rectangle(0, 0, Width, splitY), new Rectangle(0, 0, Width, splitY), GraphicsUnit.Pixel);
-            if (shown > 0)
-                g.DrawImage(open, new Rectangle(0, splitY, Width, shown), new Rectangle(0, splitY, Width, shown), GraphicsUnit.Pixel);
-            int restHeight = Height - splitY - shown;
-            if (restHeight > 0)
-                g.DrawImage(closed, new Rectangle(0, splitY + shown, Width, restHeight), new Rectangle(0, splitY, Width, restHeight), GraphicsUnit.Pixel);
+            g.DrawImageUnscaled(from, 0, 0);
+            if (to == null) return;
+            if (!clock.IsRunning) clock.Start();
+            float progress = PageTransitionOverlay.Ease(clock.ElapsedMilliseconds / (float)durationMs);
+            using (var attributes = new System.Drawing.Imaging.ImageAttributes())
+            {
+                attributes.SetColorMatrix(new System.Drawing.Imaging.ColorMatrix { Matrix33 = progress });
+                g.DrawImage(to, new Rectangle(0, 0, to.Width, to.Height), 0, 0, to.Width, to.Height, GraphicsUnit.Pixel, attributes);
+            }
         }
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing)
-            {
-                timer.Dispose();
-                before.Dispose();
-                after.Dispose();
-            }
+            if (disposing) { timer.Dispose(); from.Dispose(); if (to != null) to.Dispose(); }
             base.Dispose(disposing);
         }
     }

@@ -29,6 +29,7 @@ namespace SpriteSheetMaker
         // 見本地形は既定で有効。古いファイルにこの項目が無くても有効のまま読めるよう、反転して持つ。
         [DataMember(Name = "disableTerrain")] public bool DisableTerrain;
         [DataMember(Name = "previewMode")] public string PreviewMode = "";
+        [DataMember(Name = "map")] public string MapJson;
 
         [DataMember(Name = "playerMoveSpeed")] public decimal PlayerMoveSpeed = 1;
         [DataMember(Name = "playerJump")] public decimal PlayerJump = 1;
@@ -102,6 +103,7 @@ namespace SpriteSheetMaker
 
         // 保存時: 画像の読み込み元パス。読み込み時: 展開先パス。ファイルには書かない。
         public string Path = "";
+        [DataMember(Name = "mapId")] public string MapId = "";
     }
 
     internal sealed class ProjectSaveResult
@@ -126,7 +128,8 @@ namespace SpriteSheetMaker
     internal static class ProjectFile
     {
         // 2: ジャンプ力の基準を変更（設定値 1.0 = 従来の 1.6）。1 の保存ファイルは読み込み時に換算する。
-        public const int CurrentFormatVersion = 2;
+        // 3: マップチップの参照・配置・補正を追加。
+        public const int CurrentFormatVersion = 3;
         private const decimal LegacyJumpScale = 1.6m;
         public const string Extension = ".smproj";
         private const string DocumentEntry = "project.json";
@@ -188,7 +191,7 @@ namespace SpriteSheetMaker
                     using (Stream input = new FileStream(image.Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                     using (Stream output = entry.Open())
                         input.CopyTo(output);
-                    folder.Images.Add(new ProjectImage { Name = name });
+                    folder.Images.Add(new ProjectImage { Name = name, MapId = image.MapId });
                     result.SavedImages++;
                 }
             }
@@ -329,6 +332,7 @@ namespace SpriteSheetMaker
             if (document == null) return null;
             document.AppVersion = document.AppVersion ?? "";
             document.PreviewMode = document.PreviewMode ?? "";
+            if (!string.IsNullOrEmpty(document.MapJson)) document.MapJson = MapDocument.FromJson(document.MapJson).ToJson();
             document.ColorBlendMode = document.ColorBlendMode ?? "";
             document.EffectClip = document.EffectClip ?? new ProjectClip();
             document.PlayerClips = document.PlayerClips ?? new List<ProjectClip>();

@@ -297,6 +297,8 @@ namespace SpriteSheetMaker
             string oldDirectory = projectExtractDir;
             FileStream oldLock = projectDirectoryLock;
             projectDirectoryLock = LockProjectDirectory(extractDirectory);
+            // 中身がまとめて入れ替わるので、今の絵で覆ってから切り替え、新しい絵へ溶け込ませる。
+            CrossfadeOverlay contentCover = CoverContent();
             RestoreState(SnapshotFromDocument(loaded.Document));
             ResetViewsToFit();
             double ratio = loaded.Document.SheetPaneRatio;
@@ -310,6 +312,7 @@ namespace SpriteSheetMaker
             AddRecentProject(path);
             UpdateProjectTitle();
             statusLabel.Text = Loc.T("message.projectOpened", Path.GetFileName(path));
+            StartContentCrossfade(contentCover);
 
             var notes = new List<string>();
             if (loaded.NewerFormat) notes.Add(Loc.T("message.projectNewerFormat"));
@@ -361,6 +364,7 @@ namespace SpriteSheetMaker
                 ShowAxisNumbers = state.ShowAxisNumbers,
                 DisableTerrain = !state.UseTerrain,
                 PreviewMode = state.PreviewMode.ToString(),
+                MapJson = state.MapJson,
                 PlayerMoveSpeed = state.PlayerMoveSpeed,
                 PlayerJump = state.PlayerJumpDistance,
                 PlayerGravity = state.PlayerGravity,
@@ -390,7 +394,7 @@ namespace SpriteSheetMaker
             foreach (FolderSnapshot folder in state.Folders)
             {
                 var projectFolder = new ProjectFolder { Name = folder.Name };
-                foreach (string path in folder.Paths) projectFolder.Images.Add(new ProjectImage { Path = path });
+                foreach (string path in folder.Paths) projectFolder.Images.Add(new ProjectImage { Path = path, MapId = MapAssetId(path) });
                 document.Folders.Add(projectFolder);
             }
             return document;
@@ -411,6 +415,7 @@ namespace SpriteSheetMaker
                 ShowAxisNumbers = document.ShowAxisNumbers,
                 UseTerrain = !document.DisableTerrain,
                 PreviewMode = ParseEnum(document.PreviewMode, defaultSnapshot.PreviewMode),
+                MapJson = RestoreMapPaths(document),
                 PlayerMoveSpeed = document.PlayerMoveSpeed,
                 PlayerJumpDistance = document.PlayerJump,
                 PlayerGravity = document.PlayerGravity,

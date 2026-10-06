@@ -699,4 +699,111 @@ namespace SpriteSheetMaker
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
         }
     }
+
+    //==================================================
+    // FoldGroupHeader
+    // 状態一覧のグループ見出し（ジャンプ・攻撃）。押すと下の行を折り畳む／開く。
+    // 右端の矢印は開閉に合わせて回り、マウスを乗せると背景が少し明るくなる。
+    //==================================================
+    internal sealed class FoldGroupHeader : Panel
+    {
+        private float turn = 1f, hoverMix;
+        private Timer turnMotion, hoverMotion;
+        public string Key { get; set; }
+        public bool Expanded { get; private set; } = true;
+        public Color HoverColor { get; set; } = Color.FromArgb(31, 40, 47);
+        public Color ChevronColor { get; set; } = Color.FromArgb(190, 198, 205);
+        public Color ChevronHoverColor { get; set; } = Color.FromArgb(243, 245, 247);
+        public event Action Toggled;
+
+        public FoldGroupHeader()
+        {
+            SetStyle(ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint |
+                ControlStyles.ResizeRedraw | ControlStyles.Selectable, true);
+            TabStop = true;
+            Cursor = Cursors.Hand;
+            AccessibleRole = AccessibleRole.OutlineButton;
+        }
+
+        // 子（色の線・見出し・補足）を押しても開閉し、乗せたときの明るさも見出し全体で揃える。
+        public void AdoptChildren()
+        {
+            foreach (Control child in Controls)
+            {
+                child.Cursor = Cursors.Hand;
+                child.Click += (s, e) => { Focus(); Toggle(); };
+                child.MouseEnter += (s, e) => FadeHover(true);
+                child.MouseLeave += (s, e) => { if (!ClientRectangle.Contains(PointToClient(Cursor.Position))) FadeHover(false); };
+            }
+        }
+
+        public void SetExpanded(bool expanded, bool animate)
+        {
+            Expanded = expanded;
+            UiMotion.Stop(ref turnMotion);
+            float from = turn, to = expanded ? 1f : 0f;
+            turnMotion = UiMotion.Animate(animate ? 180 : 0, t => { turn = from + (to - from) * t; Invalidate(); });
+        }
+
+        private void Toggle()
+        {
+            SetExpanded(!Expanded, true);
+            if (Toggled != null) Toggled();
+        }
+
+        private void FadeHover(bool on)
+        {
+            UiMotion.Stop(ref hoverMotion);
+            float from = hoverMix, to = on ? 1f : 0f;
+            hoverMotion = UiMotion.Animate(120, t =>
+            {
+                hoverMix = from + (to - from) * t;
+                // 子のラベルも同じ背景色にして、帯として一緒に明るくする。
+                Color back = UiMotion.Mix(BackColor, HoverColor, hoverMix);
+                foreach (Control child in Controls) if (child is Label) child.BackColor = back;
+                Invalidate();
+            });
+        }
+
+        protected override void OnClick(EventArgs e) { Focus(); Toggle(); base.OnClick(e); }
+        protected override void OnMouseEnter(EventArgs e) { FadeHover(true); base.OnMouseEnter(e); }
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            if (!ClientRectangle.Contains(PointToClient(Cursor.Position))) FadeHover(false);
+            base.OnMouseLeave(e);
+        }
+        protected override void OnGotFocus(EventArgs e) { Invalidate(); base.OnGotFocus(e); }
+        protected override void OnLostFocus(EventArgs e) { Invalidate(); base.OnLostFocus(e); }
+        protected override bool IsInputKey(Keys keyData) { return keyData == Keys.Enter || keyData == Keys.Space || base.IsInputKey(keyData); }
+        protected override void OnKeyDown(KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Enter || e.KeyCode == Keys.Space) { Toggle(); e.Handled = true; }
+            base.OnKeyDown(e);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            g.Clear(UiMotion.Mix(BackColor, HoverColor, hoverMix));
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            float size = DeviceDpi / 96f;
+            GraphicsState state = g.Save();
+            // 閉じているときは右向き、開いているときは下向き。
+            g.TranslateTransform(Width - 18 * size, Height / 2f);
+            g.RotateTransform(90 * turn);
+            using (var pen = new Pen(UiMotion.Mix(ChevronColor, ChevronHoverColor, hoverMix), 1.6f * size)
+                { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round })
+                g.DrawLines(pen, new[] { new PointF(-2.5f * size, -5 * size), new PointF(2.5f * size, 0), new PointF(-2.5f * size, 5 * size) });
+            g.Restore(state);
+            if (Focused && ShowFocusCues)
+                using (GraphicsPath ring = MainForm.CreateRoundedPath(new Rectangle(1, 1, Width - 3, Height - 3), 6))
+                using (var pen = new Pen(Color.FromArgb(120, 84, 73, 255))) g.DrawPath(pen, ring);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) { UiMotion.Stop(ref turnMotion); UiMotion.Stop(ref hoverMotion); }
+            base.Dispose(disposing);
+        }
+    }
 }

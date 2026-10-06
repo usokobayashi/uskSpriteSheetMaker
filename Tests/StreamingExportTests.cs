@@ -22,7 +22,7 @@ namespace SpriteSheetMakerTests
             yield return new TestCase { Name = "Streaming_Cancel_LeavesNoPartialFileAndKeepsExisting", Action = Cancel_LeavesNoPartialFileAndKeepsExisting };
             yield return new TestCase { Name = "Streaming_Gif_FrameProviderMatchesListOverload", Action = Gif_FrameProviderMatchesListOverload };
             yield return new TestCase { Name = "Streaming_Gif_HashLzwMatchesDictionaryReference", Action = Gif_HashLzwMatchesDictionaryReference };
-            yield return new TestCase { Name = "Streaming_Gif_PaletteIndicesMatchRedrawReference", Action = Gif_PaletteIndicesMatchRedrawReference };
+            yield return new TestCase { Name = "Streaming_Gif_PaletteFromActualColors", Action = Gif_PaletteFromActualColors };
             yield return new TestCase { Name = "Idle_InputActivityWakesAndTracksHeldKeys", Action = Idle_InputActivityWakesAndTracksHeldKeys };
             yield return new TestCase { Name = "Idle_PlayerIsRestingOnlyWhenStill", Action = Idle_PlayerIsRestingOnlyWhenStill };
             yield return new TestCase { Name = "Idle_SecondsToNextFrameFollowsClip", Action = Idle_SecondsToNextFrameFollowsClip };
@@ -282,7 +282,7 @@ namespace SpriteSheetMakerTests
                     {
                         return (Bitmap)frames[index].Clone();
                     }, true, 100, p => disposed++, CancellationToken.None);
-                    Assert.AreEqual(3, disposed, "progress is reported per frame");
+                    Assert.AreEqual(6, disposed, "progress is reported per frame in both passes (counting colors, then writing)");
                 }
                 finally
                 {
@@ -379,41 +379,56 @@ namespace SpriteSheetMakerTests
         // パレット番号への変換を「描き直してから読む」方式から「直接読む」方式へ替えても、不透明・透明の画素は
         // 同じ番号になること。半透明の画素は、描き直す方式だとGDI+の丸めで色が±1階調ずれることがあり、直接読む方が
         // 元の色に忠実なため、その画素だけは番号が1段階ずれてもよいものとする。
-        private static void Gif_PaletteIndicesMatchRedrawReference()
+        // GIF の色表は全コマで実際に使われた色から作る。255色以下なら色はそのまま（灰色が緑がかったりしない）。
+        // 超えるときは減色するが、元の色から大きく外れない。
+        private static void Gif_PaletteFromActualColors()
         {
-            var method = typeof(GifWriter).GetMethod("ConvertToPaletteIndices", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
-            Assert.IsTrue(method != null, "ConvertToPaletteIndices exists");
-            using (Bitmap source = RandomBitmap(64, 48, 1234))
+            Func<int, List<Bitmap>> make = colors =>
             {
-                var actual = (byte[])method.Invoke(null, new object[] { source });
-                byte[] expected;
-                using (var copy = new Bitmap(source.Width, source.Height, PixelFormat.Format32bppArgb))
+                var frames = new List<Bitmap>();
+                for (int f = 0; f < 2; f++)
                 {
-                    using (Graphics g = Graphics.FromImage(copy))
+                    var b = new Bitmap(32, 32, PixelFormat.Format32bppArgb);
+                    for (int i = 0; i < 32 * 32; i++)
                     {
-                        g.Clear(Color.Transparent);
-                        g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
-                        g.DrawImageUnscaled(source, 0, 0);
+                        int c = (i + f * 7) % (colors + 1);
+                        b.SetPixel(i % 32, i / 32, c == colors ? Color.Transparent : Color.FromArgb(255, (c * 37) % 256, (c * 37) % 256, (c * 91 + 13) % 256));
                     }
-                    byte[] px = Bytes(copy);
-                    expected = new byte[source.Width * source.Height];
-                    for (int i = 0; i < expected.Length; i++)
+                    frames.Add(b);
+                }
+                return frames;
+            };
+            foreach (int colors in new[] { 200, 600 })
+            {
+                string path = Temp(".gif");
+                List<Bitmap> frames = make(colors);
+                try
+                {
+                    GifWriter.SaveAnimatedGif(path, frames, 100);
+                    using (var gif = Image.FromFile(path))
                     {
-                        int o = i * 4;
-                        expected[i] = px[o + 3] < 128 ? (byte)0
-                            : (byte)(1 + ((px[o + 2] * 5 + 127) / 255) * 42 + ((px[o + 1] * 6 + 127) / 255) * 6 + ((px[o] * 5 + 127) / 255));
+                        int worst = 0;
+                        for (int f = 0; f < frames.Count; f++)
+                        {
+                            gif.SelectActiveFrame(System.Drawing.Imaging.FrameDimension.Time, f);
+                            using (var decoded = new Bitmap(gif))
+                                for (int y = 0; y < 32; y++) for (int x = 0; x < 32; x++)
+                                {
+                                    Color want = frames[f].GetPixel(x, y), got = decoded.GetPixel(x, y);
+                                    Assert.AreEqual(want.A == 0, got.A == 0, "transparency kept");
+                                    if (want.A == 0) continue;
+                                    worst = Math.Max(worst, Math.Max(Math.Abs(want.R - got.R), Math.Max(Math.Abs(want.G - got.G), Math.Abs(want.B - got.B))));
+                                }
+                        }
+                        if (colors <= 255) Assert.AreEqual(0, worst, "exact colors when 255 or fewer");
+                        else Assert.IsTrue(worst <= 48, "reduced colors stay close (" + worst + ")");
                     }
                 }
-                Assert.AreEqual(expected.Length, actual.Length, "index count");
-                int different = 0;
-                for (int i = 0; i < expected.Length; i++)
+                finally
                 {
-                    if (expected[i] == actual[i]) continue;
-                    int alpha = Bytes(source)[i * 4 + 3];
-                    if (alpha == 0 || alpha == 255) different++;
-                    else if (actual[i] == 0 || expected[i] == 0) different++;   // 透明かどうかの判定は同じはず
+                    foreach (Bitmap b in frames) b.Dispose();
+                    if (File.Exists(path)) File.Delete(path);
                 }
-                Assert.AreEqual(0, different, "opaque/transparent pixels whose palette index differs");
             }
         }
 

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace SpriteSheetMakerTests
 {
@@ -30,6 +31,11 @@ namespace SpriteSheetMakerTests
             cases.AddRange(PageTransitionTests.All());
             cases.AddRange(MotionTests.All());
             cases.AddRange(DetailFixTests.All());
+            cases.AddRange(MapTests.All());
+            cases.AddRange(MapLayerDemo.All());
+            cases.AddRange(LargeExportTests.All());
+            cases.AddRange(PerfProbe.All());
+            if (Environment.GetEnvironmentVariable("MAP_TEST_ONLY") == "1") cases = new List<TestCase>(MapTests.All().Concat(MapLayerDemo.All()).Concat(LargeExportTests.All()).Concat(PerfProbe.All()));
 
             int failed = TestRunner.RunAll(cases);
             return failed == 0 ? 0 : 1;

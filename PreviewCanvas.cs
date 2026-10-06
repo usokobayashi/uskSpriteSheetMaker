@@ -146,6 +146,12 @@ namespace SpriteSheetMaker
             }
         }
 
+        // カーソルを置いたセルの位置の札（シート表示のときだけ）。
+        private bool showCoordinates;
+        public bool ShowCoordinates { get { return showCoordinates; } set { if (showCoordinates == value) return; showCoordinates = value; Invalidate(); } }
+        public UvCoordinateFormat UvFormat { get; set; }
+        private Point coordinateHover = new Point(-1, -1);
+
         private const int AxisMarginLeft = 30;
         private const int AxisMarginTop = 24;
 
@@ -536,9 +542,16 @@ namespace SpriteSheetMaker
             }
         }
 
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            base.OnMouseLeave(e);
+            if (coordinateHover.X >= 0) { coordinateHover = new Point(-1, -1); Invalidate(); }
+        }
+
         protected override void OnMouseMove(MouseEventArgs e)
         {
             base.OnMouseMove(e);
+            if (showCoordinates && image != null && sceneSprite == null) { coordinateHover = e.Location; Invalidate(); }
 
             if (draggingMemo != null)
             {
@@ -1120,6 +1133,7 @@ namespace SpriteSheetMaker
 
             if (AxisNumbersActive) DrawAxisNumbers(g, effectivePan, effectiveZoom);
             DrawMemos(g, effectivePan, effectiveZoom);
+            if (showCoordinates && coordinateHover.X >= 0 && !dragging && !selectingCells && draggingMemo == null) DrawCoordinateCard(g, effectivePan, effectiveZoom);
         }
 
         // 付箋: 灰色の面＋白寄りの灰色の縁の角丸。文字はコメントのような緑。シート本体にも重なる。
@@ -1334,6 +1348,26 @@ namespace SpriteSheetMaker
                 centered.Dispose();
                 rightAligned.Dispose();
             }
+        }
+
+        // 列・行はシート上の並び（左から・上から 1 始まり）。px と UV はシート全体の大きさに対する位置。
+        private void DrawCoordinateCard(Graphics g, PointF pan, float zoom)
+        {
+            if (image == null || sceneSprite != null || rects.Count == 0) return;
+            PointF world = ScreenToWorld(coordinateHover, zoom, pan);
+            PreviewRect hit = rects.FirstOrDefault(r => r.Rect.Contains((int)Math.Floor(world.X), (int)Math.Floor(world.Y)));
+            if (hit == null) return;
+            var rows = new List<List<PreviewRect>>();
+            foreach (PreviewRect r in rects.OrderBy(c => c.Rect.Y).ThenBy(c => c.Rect.X))
+            {
+                if (rows.Count == 0 || r.Rect.Y >= rows[rows.Count - 1][0].Rect.Bottom) rows.Add(new List<PreviewRect>());
+                rows[rows.Count - 1].Add(r);
+            }
+            int row = rows.FindIndex(list => list.Contains(hit));
+            int column = rows[row].OrderBy(c => c.Rect.X).ToList().IndexOf(hit);
+            string[] lines = CoordinateCard.Lines(hit.Number, (column + 1).ToString(), (row + 1).ToString(), Size.Empty, hit.Rect, WorldSize, UvFormat);
+            using (Font font = UiFont.Create(12, FontStyle.Regular, GraphicsUnit.Pixel))
+                CoordinateCard.Draw(g, ClientRectangle, coordinateHover, lines, font);
         }
 
         private static PointF ScreenToWorld(Point screen, float z, PointF p)

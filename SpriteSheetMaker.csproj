@@ -51,7 +51,7 @@
 
   <ItemGroup>
     <Compile Include="Program.cs" />
-    <Compile Include="MainForm.cs" />
+    <Compile Include="MainForm.cs" /><Compile Include="MainForm.Map.cs" /><Compile Include="MapDocument.cs" /><Compile Include="MapCanvas.cs" /><Compile Include="CoordinateCard.cs" /><Compile Include="FolderTreeView.cs" /><Compile Include="HelpCatalog.cs" />
     <Compile Include="ImagePipeline.cs" />
     <Compile Include="UndoManager.cs" />
     <Compile Include="TgaWriter.cs" />

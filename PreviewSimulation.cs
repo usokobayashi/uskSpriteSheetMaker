@@ -9,7 +9,8 @@ namespace SpriteSheetMaker
     {
         Standard,
         Player,
-        Effect
+        Effect,
+        Map
     }
 
     internal enum PlayerAnimationState

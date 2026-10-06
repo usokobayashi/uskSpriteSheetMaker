@@ -54,6 +54,13 @@ namespace SpriteSheetMaker
             return true;
         }
 
+        // 操作ではなく、画面の都合で自動に整えられた変化（並び情報の整理など）を、記録済みの状態へ取り込む。
+        // 別の1回として積まないため（積むと、元に戻すを2回押さないと戻らない）。
+        public void Resettle()
+        {
+            if (lastCommittedState != null) lastCommittedState = captureState();
+        }
+
         public bool Undo()
         {
             if (undoStack.Count == 0) return false;
